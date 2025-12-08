@@ -24,7 +24,7 @@ class MotoristaPerfilSerializer(serializers.ModelSerializer):
     Retorna os dados do motorista logado (vinculado ao token JWT).
     """
     # Mapeia o campo username do modelo User para o CPF, garantindo que seja read-only
-    cpf = serializers.CharField(source='cpf', read_only=True) 
+    cpf = serializers.CharField(read_only=True)
     
     # O campo 'username' da tabela User (que contém o CPF)
     user_username = serializers.CharField(source='user.username', read_only=True, label="CPF do Usuário")

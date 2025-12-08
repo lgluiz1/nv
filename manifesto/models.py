@@ -31,6 +31,18 @@ class Manifesto(models.Model):
     """
     O cabeçalho da entrega/coleta. O número do manifesto é único no sistema.
     """
+    STATUS_CHOICES = [
+        ('AGUARDANDO', 'Aguardando Início (Buscado, mas não iniciado)'),
+        ('TRANSPORTE', 'Em Transporte (Rota iniciada)'),
+        ('FINALIZADO', 'Finalizado (Com KM Final registrado)'),
+        ('CANCELADO', 'Cancelado (Pelo operacional)'),
+    ]
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='AGUARDANDO', # Estado inicial após a busca da Task
+        verbose_name="Status do Manifesto"
+    )
     # ÚNICO: Garante que cada manifesto seja registrado apenas uma vez
     numero_manifesto = models.CharField(max_length=50, unique=True, verbose_name="Número do Manifesto")
     

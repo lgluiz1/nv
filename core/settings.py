@@ -38,7 +38,14 @@ INSTALLED_APPS = [
     # Nossas Apps
     'usuarios',
     'manifesto',   # CORREÇÃO: Deve ser 'manifestos' (plural)
+    'mobile',
 ]
+
+# (Deve ser a URL da sua página HTML de login)
+LOGIN_URL = '/app/login/'
+# URL para onde o Django deve REDIRECIONAR o usuário APÓS o login bem-sucedido
+# (Não é estritamente necessário para a API, mas bom para evitar redirecionamentos embutidos)
+LOGIN_REDIRECT_URL = '/app/'
 
 MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -56,7 +63,7 @@ ROOT_URLCONF = 'core.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -105,6 +112,7 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles' 
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 STATICFILES_DIRS = [
+    BASE_DIR / 'static',
     # Caso precise de arquivos estáticos globais
 ]
 

@@ -1,0 +1,69 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Motorista - Rotas</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Estilos Customizados para Mobile */
+        body { background-color: #f4f4f9; }
+        .card-manifesto { border-left: 5px solid #dc3545; }
+        .card-nf { border-left: 3px solid #0d6efd; margin-top: 15px; }
+        .header-status { background-color: #dc3545; color: white; padding: 10px; border-radius: 5px 5px 0 0; }
+        .loading-animation { width: 50px; height: 50px; }
+    </style>
+</head>
+<body>
+    <div class="container py-3">
+        <div id="app-content">
+            <div class="text-center my-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Carregando...</span>
+                </div>
+                <p class="mt-2">Verificando status...</p>
+            </div>
+        </div>
+
+        <div class="fixed-bottom p-3 bg-light border-top d-flex justify-content-between">
+            <button class="btn btn-sm btn-outline-danger" onclick="logout()">Sair do App</button>
+            <p class="text-muted small my-0">Transportadora App</p>
+        </div>
+    </div>
+    
+    <div class="modal fade" id="loadingModal" tabindex="-1" aria-labelledby="loadingModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-body text-center">
+            <div class="spinner-border text-primary loading-animation" role="status">
+              <span class="visually-hidden">Processando...</span>
+            </div>
+            <h5 class="mt-3" id="loadingModalLabel">Buscando Manifesto...</h5>
+            <p>Processando dados no TMS (Assíncrono). Aguarde.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="modal fade" id="kmFinalModal" tabindex="-1" aria-labelledby="kmFinalModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="kmFinalModalLabel">Finalização de Jornada</h5>
+      </div>
+      <div class="modal-body">
+        <p>Todas as notas foram processadas. Insira a quilometragem final para concluir o manifesto.</p>
+        <form id="finalizar-form-modal">
+            <input type="number" id="km-final" class="form-control mb-3" placeholder="KM Final (Obrigatório)" required>
+            <div id="finalizar-message" class="text-danger small mb-2"></div>
+            <button type="submit" class="btn btn-danger w-100">Confirmar e Finalizar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{% static 'js/manifesto.js' %}"></script>
+</body>
+</html>

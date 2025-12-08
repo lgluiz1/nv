@@ -5,102 +5,143 @@ import requests
 from django.conf import settings
 from django.utils import timezone
 from usuarios.models import Motorista
-from manifesto.models import Manifesto, NotaFiscal, HistoricoOcorrencia, Ocorrencia
+# CORREÇÃO CRÍTICA: O nome do módulo deve ser 'manifestos' (PLURAL)
+from manifesto.models import Manifesto, NotaFiscal, HistoricoOcorrencia, Ocorrencia 
 from django.db import IntegrityError, transaction
 from collections import defaultdict
 import json
 
+# --- CONFIGURAÇÕES DA API TMS ---
+TEMPLATE_ID = 2972
+EMPRESA = "quickdelivery"
+TOKEN = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw" # SEU TOKEN REAL
 
-# Mapeamento das chaves JSON
+URL_BASE_TMS = f"https://{EMPRESA}.eslcloud.com.br/api/analytics/reports/{TEMPLATE_ID}/data"
+# --------------------------------------------
+
+
+# Mapeamento das chaves JSON (AGORA CORRETO)
 MAPA_JSON = {
+    # NF E CHAVES GERAIS
     'CHAVE_ACESSO': 'mft_fis_fit_fis_ioe_key',
     'NUMERO_NF': 'mft_fis_fit_fis_ioe_number',
+    'NUMERO_MANIFESTO_EVT': 'sequence_code',
+    
+    # DADOS DO MOTORISTA (PARA VALIDAÇÃO)
     'CPF_MOTORISTA_TMS': 'mft_mdr_iil_document',
-    'ENDERECO_LINHA1': 'mft_pfs_pck_pds_line_1',
-    'ENDERECO_NUMERO': 'mft_pfs_pck_pds_number',
+    
+    # DADOS DO CLIENTE / DESTINATÁRIO (CHAVES VINDAS DO JSON COMPLETO)
+    'NOME_CLIENTE': 'mft_fis_fit_fis_ioe_rpt_name', 
+    'ENDERECO_LOGRADOURO': 'mft_fis_fit_fis_ioe_rpt_mds_line_1', 
+    'ENDERECO_NUMERO': 'mft_fis_fit_fis_ioe_rpt_mds_number',
+    'ENDERECO_BAIRRO': 'mft_fis_fit_fis_ioe_rpt_mds_neighborhood',
+    'ENDERECO_CEP': 'mft_fis_fit_fis_ioe_rpt_mds_postal_code',
+    
+    # DADOS DE OCORRÊNCIA/EVENTOS
     'CODIGO_OCORRENCIA_EVT': 'mft_fis_fit_fte_lce_f_e_ics_ore_code',
     'DATA_OCORRENCIA_EVT': 'mft_fis_fit_fte_lce_f_e_ics_occurrence_at',
     'COMENTARIOS_EVT': 'mft_fis_fit_fte_lce_f_e_ics_comments',
-    'NUMERO_MANIFESTO_EVT': 'sequence_code',
-    'NOME_DESTINATARIO': 'mft_mdr_iil_name',
 }
 
 
 @shared_task
-def processa_manifesto_dataexport(motorista_cpf, numero_manifesto, dados_json_export):
+def processa_manifesto_dataexport(motorista_cpf, numero_manifesto): 
     """
-    Processa o JSON de eventos do Data Export, valida e consolida os dados.
+    1. Busca os dados no Data Export do TMS via requests.get.
+    2. Valida o motorista pelo documento.
+    3. Consolida e salva o manifesto e o histórico.
     """
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {TOKEN}"
+    }
 
-    # Converter string JSON, se necessário
-    if isinstance(dados_json_export, str):
-        dados_manifesto_eventos = json.loads(dados_json_export)
-    else:
-        dados_manifesto_eventos = dados_json_export
+    payload = {
+        "search": {
+            "manifests": {
+                "sequence_code": int(numero_manifesto), 
+                "service_date": "2024-01-01 - 2050-12-31" 
+            }
+        },
+        "page": "1",
+        "per": "100"
+    }
 
-    if not dados_manifesto_eventos:
-        return {'status': 'erro', 'mensagem': 'Nenhum dado encontrado para este manifesto.'}
+    # --- 1. CHAMADA REAL AO TMS ---
+    try:
+        response = requests.get(URL_BASE_TMS, headers=headers, data=json.dumps(payload), timeout=30)
+        response.raise_for_status()
 
-    # 1. Validação do Motorista (pega do primeiro registro)
-    cpf_tms = str(dados_manifesto_eventos[0].get(MAPA_JSON['CPF_MOTORISTA_TMS'])).zfill(11)
+        dados_manifesto_eventos = response.json()
+        
+    except requests.exceptions.RequestException as e:
+        return {'status': 'erro', 'mensagem': f'Falha de comunicação com TMS: {e}'}
+    except json.JSONDecodeError:
+        return {'status': 'erro', 'mensagem': 'Resposta inválida (não-JSON) do servidor TMS.'}
 
+    
+    # --- 2. VALIDAÇÃO INICIAL ---
+    
+    if not dados_manifesto_eventos or not isinstance(dados_manifesto_eventos, list):
+        return {'status': 'erro', 'mensagem': 'Nenhum dado encontrado para este manifesto no TMS.'}
+
+    cpf_tms = str(dados_manifesto_eventos[0].get(MAPA_JSON['CPF_MOTORISTA_TMS']) or '').zfill(11)
+    
     if cpf_tms != motorista_cpf:
-        return {
-            'status': 'erro',
-            'mensagem': 'Manifesto não pertence ao CPF logado. Contate a equipe operacional.'
-        }
+        return {'status': 'erro', 'mensagem': 'Documento do motorista não confere com o CPF logado.'}
 
+    
+    # --- 3. CONSOLIDAÇÃO E SALVAMENTO ---
+    
     try:
         motorista_obj = Motorista.objects.get(cpf=motorista_cpf)
     except Motorista.DoesNotExist:
         return {'status': 'erro', 'mensagem': 'Perfil de Motorista interno não encontrado.'}
 
-    # 2. Consolidador de notas
     notas_consolidadas = defaultdict(
-        lambda: {
-            'eventos': [],
-            'dados_nf': None,
-            'ultima_ocorrencia': None,
-            'data_ultima_ocorrencia': timezone.datetime.min.replace(tzinfo=timezone.utc)
-        }
+        lambda: {'eventos': [], 'dados_nf': None, 'ultima_ocorrencia': None, 'data_ultima_ocorrencia': timezone.datetime.min.replace(tzinfo=timezone.utc)}
     )
 
-    # INÍCIO DO TRY GLOBAL
     try:
         with transaction.atomic():
-
-            # 3. Verifica manifesto ativo
-            manifesto_ativo = Manifesto.objects.filter(
-                motorista=motorista_obj, finalizado=False
-            ).first()
+            
+            manifesto_ativo = Manifesto.objects.filter(motorista=motorista_obj, finalizado=False).first()
 
             if manifesto_ativo and manifesto_ativo.numero_manifesto != numero_manifesto:
-                return {
-                    'status': 'erro',
-                    'mensagem': f'Motorista já possui manifesto {manifesto_ativo.numero_manifesto} ativo.'
-                }
+                return {'status': 'erro', 'mensagem': f'Motorista já possui manifesto {manifesto_ativo.numero_manifesto} ativo.'}
 
-            # 4. Cria/recupera o manifesto
             manifesto, created = Manifesto.objects.get_or_create(
                 numero_manifesto=numero_manifesto,
                 defaults={'motorista': motorista_obj, 'finalizado': False}
             )
 
-            # 5. Agrupamento dos eventos
             for evento in dados_manifesto_eventos:
-
                 chave_acesso = evento.get(MAPA_JSON['CHAVE_ACESSO'])
-                if not chave_acesso:
-                    continue
+                if not chave_acesso: continue
 
-                # Salva dados gerais da NF
+                # --- EXTRAÇÃO DO CLIENTE E ENDEREÇO CORRETOS ---
+                logradouro = evento.get(MAPA_JSON['ENDERECO_LOGRADOURO']) or ''
+                numero = evento.get(MAPA_JSON['ENDERECO_NUMERO']) or ''
+                bairro = evento.get(MAPA_JSON['ENDERECO_BAIRRO']) or ''
+                cep = evento.get(MAPA_JSON['ENDERECO_CEP']) or ''
+                
+                # Monta a string de Endereço (Ex: RUA DR MARIO VIANA, 653 | SANTA ROSA | CEP: 24241001)
+                endereco_completo = f"{logradouro}, {numero}".strip().replace(" ,", ",")
+                if bairro:
+                    endereco_completo += f" | Bairro: {bairro}"
+                if cep:
+                    endereco_completo += f" | CEP: {cep}"
+                # --- FIM EXTRAÇÃO ---
+
+                # Salva dados gerais da NF (agora com Nome do Cliente e Endereço Completo)
                 notas_consolidadas[chave_acesso]['dados_nf'] = {
                     'numero_nota': evento.get(MAPA_JSON['NUMERO_NF']),
-                    'destinatario': evento.get(MAPA_JSON['NOME_DESTINATARIO'], 'Destinatário Não Informado'),
-                    'endereco_entrega': f"{evento.get(MAPA_JSON['ENDERECO_LINHA1'], '')} {evento.get(MAPA_JSON['ENDERECO_NUMERO'], '')}"
+                    'destinatario': evento.get(MAPA_JSON['NOME_CLIENTE'], 'Destinatário N/D'), 
+                    'endereco_entrega': endereco_completo
                 }
 
-                # Conversão da data do evento
+                # ... (Lógica de Eventos/Ocorrências) ...
                 data_evt = evento.get(MAPA_JSON['DATA_OCORRENCIA_EVT'])
                 if data_evt:
                     try:
@@ -117,30 +158,25 @@ def processa_manifesto_dataexport(motorista_cpf, numero_manifesto, dados_json_ex
 
                     notas_consolidadas[chave_acesso]['eventos'].append(evento_historico)
 
-                    # Atualizar evento mais recente
                     if data_ocorrencia > notas_consolidadas[chave_acesso]['data_ultima_ocorrencia']:
                         notas_consolidadas[chave_acesso]['data_ultima_ocorrencia'] = data_ocorrencia
                         notas_consolidadas[chave_acesso]['ultima_ocorrencia'] = evento.get(MAPA_JSON['CODIGO_OCORRENCIA_EVT'])
-
-            # 6. Processar cada NF consolidada
+            
+            # --- 4. SALVAMENTO FINAL NO BANCO ---
             for chave_acesso, dados in notas_consolidadas.items():
-
                 nf_dados = dados['dados_nf']
                 ultima_ocorrencia = dados['ultima_ocorrencia']
 
-                # Definição do status inicial
                 status_inicial = 'PENDENTE'
                 if ultima_ocorrencia in [1, 2]:
                     status_inicial = 'BAIXADA'
 
-                # Criar/atualizar NF
                 nf, created_nf = NotaFiscal.objects.get_or_create(
                     manifesto=manifesto,
                     chave_acesso=chave_acesso,
                     defaults={**nf_dados, 'status': status_inicial}
                 )
 
-                # 7. Salvar histórico
                 for evento_data in dados['eventos']:
                     HistoricoOcorrencia.objects.update_or_create(
                         nota_fiscal=nf,
@@ -152,19 +188,19 @@ def processa_manifesto_dataexport(motorista_cpf, numero_manifesto, dados_json_ex
                         }
                     )
 
-        # SUCESSO GERAL
-        return {
-            'status': 'sucesso',
-            'manifesto_id': manifesto.id,
-            'mensagem': 'Manifesto e NFs vinculados com sucesso.'
-        }
+            # SUCESSO GERAL
+            return {
+                'status': 'sucesso',
+                'manifesto_id': manifesto.id,
+                'mensagem': 'Manifesto e NFs vinculados com sucesso.'
+            }
 
+    # TRATAMENTO DE EXCEÇÕES DE DB e LOGICA
     except IntegrityError as e:
         return {
             'status': 'erro',
             'mensagem': f'Erro de integridade do banco de dados: {e}'
         }
-
     except Exception as e:
         return {
             'status': 'erro',
