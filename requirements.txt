@@ -1,0 +1,11 @@
+Django~=4.2
+djangorestframework~=3.14
+psycopg2-binary~=2.9          # Driver para PostgreSQL
+python-dotenv~=1.0            # Para carregar o .env
+gunicorn~=21.2                # Servidor WSGI para produção
+celery~=5.3                   # Processamento assíncrono
+redis~=5.0                    # Broker de mensagens do Celery
+django-celery-beat~=2.5       # Agendador Celery no DB
+Pillow~=10.1                  # Essencial para uploads de imagens
+djangorestframework-simplejwt~=5.3 
+whitenoise~=6.6

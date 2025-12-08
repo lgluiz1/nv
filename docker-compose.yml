@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # 1. Banco de Dados PostgreSQL
+  db:
+    image: postgres:15-alpine
+    container_name: transportadora_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    restart: always
+
+  # 2. Broker de Mensagens Redis
+  redis:
+    image: redis:7-alpine
+    container_name: transportadora_redis
+    restart: always
+
+  # 3. Backend Django/DRF (Servidor Web)
+  backend:
+    build: .
+    container_name: transportadora_backend
+    # COMANDO AJUSTADO: Usa 'core.wsgi' para iniciar o Gunicorn
+    command: sh -c "python manage.py collectstatic --noinput && python manage.py migrate && gunicorn core.wsgi:application --bind 0.0.0.0:8000"
+    volumes:
+      - .:/transportadora_backend
+      - media_data:/transportadora_backend/media
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+    restart: always
+
+  # 4. Worker do Celery (Tarefas Assíncronas)
+  celery_worker:
+    build: .
+    container_name: transportadora_celery_worker
+    # COMANDO AJUSTADO: Usa '-A core' para carregar a aplicação Celery em core/celery.py
+    command: celery -A core worker -l info
+    volumes:
+      - .:/transportadora_backend
+    env_file:
+      - .env
+    depends_on:
+      - backend
+      - redis
+    restart: always
+
+  # 5. Agendador do Celery Beat (Tarefas Recorrentes)
+  celery_beat:
+    build: .
+    container_name: transportadora_celery_beat
+    # COMANDO AJUSTADO: Usa '-A core' para carregar a aplicação Celery
+    command: celery -A core beat -l info --scheduler django_celery_beat.schedulers.DatabaseScheduler
+    volumes:
+      - .:/transportadora_backend
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+    restart: always
+
+volumes:
+  postgres_data:
+  media_data:

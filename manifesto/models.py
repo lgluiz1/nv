@@ -1,0 +1,141 @@
+# manifestos/models.py
+
+from django.db import models
+from usuarios.models import Motorista
+from django.utils import timezone
+
+# 1. Códigos de Ocorrência do TMS
+class Ocorrencia(models.Model):
+    """
+    Tabela para mapear todos os códigos de retorno (Entrega, Coleta, Problema) exigidos pelo TMS.
+    """
+    codigo_tms = models.CharField(max_length=10, unique=True, verbose_name="Código TMS") 
+    descricao = models.CharField(max_length=255)
+    
+    TIPO_CHOICES = [
+        ('ENTREGA', 'Entrega/Coleta (Sucesso)'),
+        ('PROBLEMA', 'Problema (Rejeição/Não Realizada)'),
+    ]
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, default='PROBLEMA')
+
+    def __str__(self):
+        return f"[{self.codigo_tms}] {self.descricao}"
+    
+    class Meta:
+        verbose_name = "Código de Ocorrência"
+        verbose_name_plural = "Códigos de Ocorrências"
+
+
+# 2. Manifesto de Carga
+class Manifesto(models.Model):
+    """
+    O cabeçalho da entrega/coleta. O número do manifesto é único no sistema.
+    """
+    # ÚNICO: Garante que cada manifesto seja registrado apenas uma vez
+    numero_manifesto = models.CharField(max_length=50, unique=True, verbose_name="Número do Manifesto")
+    
+    # Vínculo com o motorista logado (Motorista > forenkey)
+    motorista = models.ForeignKey(
+        Motorista, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='manifestos_ativos',
+        verbose_name="Motorista Atribuído"
+    )
+    
+    km_inicial = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    km_final = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    
+    finalizado = models.BooleanField(default=False)
+    data_criacao = models.DateTimeField(auto_now_add=True)
+    data_finalizacao = models.DateTimeField(null=True, blank=True)
+    
+    def __str__(self):
+        return f"Manifesto {self.numero_manifesto} - {self.motorista.nome_completo if self.motorista else 'N/A'}"
+    
+    class Meta:
+        verbose_name = "Manifesto"
+        verbose_name_plural = "Manifestos"
+
+
+# 3. Notas Fiscais (Itens do Manifesto)
+class NotaFiscal(models.Model):
+    """
+    Representa uma NF-e dentro de um manifesto. A NF-e pode se repetir em outros manifestos.
+    """
+    manifesto = models.ForeignKey(Manifesto, on_delete=models.CASCADE, related_name='notas_fiscais')
+    
+    # Chave de acesso e Número não são únicos globalmente, mas são únicos DENTRO DESTE MANIFESTO
+    chave_acesso = models.CharField(max_length=44, null=True, blank=True, verbose_name="Chave de Acesso") 
+    numero_nota = models.CharField(max_length=20, verbose_name="Número NF")
+    
+    destinatario = models.CharField(max_length=255, verbose_name="Destinatário")
+    endereco_entrega = models.CharField(max_length=255, verbose_name="Endereço de Entrega")
+    
+    STATUS_CHOICES = [
+        ('PENDENTE', 'Pendente'),
+        ('BAIXADA', 'Baixada/Entregue'),
+        ('OCORRENCIA', 'Ocorrência Registrada'),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDENTE')
+
+    def __str__(self):
+        return f"NF {self.numero_nota} ({self.manifesto.numero_manifesto})"
+    
+    class Meta:
+        verbose_name = "Nota Fiscal"
+        verbose_name_plural = "Notas Fiscais"
+        # RESTRIÇÃO CHAVE: Garante que a NF-e não seja duplicada no mesmo manifesto
+        unique_together = ('manifesto', 'chave_acesso')
+        indexes = [models.Index(fields=['chave_acesso'])]
+
+
+# 4. Histórico de Ocorrências (Rastreamento)
+class HistoricoOcorrencia(models.Model):
+    """
+    Armazena CADA evento de rastreamento recebido do Data Export para uma Nota Fiscal.
+    Usado para determinar a última ocorrência (data mais recente).
+    """
+    nota_fiscal = models.ForeignKey(NotaFiscal, on_delete=models.CASCADE, related_name='historico')
+    
+    codigo_tms = models.CharField(max_length=10, verbose_name="Código Ocorrência TMS")
+    data_ocorrencia = models.DateTimeField(null=True, blank=True)
+    
+    comentarios = models.TextField(null=True, blank=True)
+    manifesto_evento = models.CharField(max_length=50, verbose_name="Cód. do Manifesto do Evento")
+
+    def __str__(self):
+        return f"NF {self.nota_fiscal.numero_nota}: Código {self.codigo_tms} em {self.data_ocorrencia}"
+
+    class Meta:
+        verbose_name = "Histórico de Ocorrência"
+        verbose_name_plural = "Históricos de Ocorrências"
+        # Garante a unicidade do evento (NF + Cód + Data)
+        unique_together = ('nota_fiscal', 'codigo_tms', 'data_ocorrencia') 
+        indexes = [models.Index(fields=['data_ocorrencia'])]
+
+
+# 5. Registro de Baixa (Comprovante final de entrega ou ocorrência)
+class BaixaNF(models.Model):
+    """
+    Registra a foto do canhoto ou o código da ocorrência FINAL enviado pelo motorista.
+    """
+    nota_fiscal = models.OneToOneField(NotaFiscal, on_delete=models.CASCADE, related_name='baixa_info')
+    
+    TIPO_CHOICES = [
+        ('ENTREGA', 'Entrega/Coleta'),
+        ('OCORRENCIA', 'Ocorrência'),
+    ]
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES)
+    
+    comprovante_foto = models.ImageField(upload_to='comprovantes/', null=True, blank=True)
+    
+    # Vincula o código de ocorrência do TMS (o que o motorista escolheu no app)
+    ocorrencia = models.ForeignKey(Ocorrencia, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    observacao = models.TextField(blank=True, null=True)
+    data_baixa = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Baixa de {self.nota_fiscal.numero_nota} ({self.tipo})"
