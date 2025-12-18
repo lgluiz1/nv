@@ -4,6 +4,40 @@ from django.db import models
 from usuarios.models import Motorista
 from django.utils import timezone
 
+
+#MANIFESTOBUSCALOG SAO ARMAZENADOS TODOS OS PEDIDOS DE BUSCA DE MANIFESTO REALIZADOS PELO MOTORISTA, CASO ELE NAO INICIE VIAGEM A OUTRA VEZ Q ELE BUSCA NUMERO DO MANIFESTO ESSA TABELA DEVER SER ATUALIZADA COM O NOVO PEDIDO DE BUSCA
+class ManifestoBuscaLog(models.Model):
+    STATUS_CHOICES = (
+        ('AGUARDANDO', 'Aguardando'),
+        ('PRONTO_PREVIEW', 'Pronto para Preview'),
+        ('PROCESSADO', 'Processado'),
+        ('ERRO', 'Erro'),
+    )
+
+    numero_manifesto = models.CharField(max_length=50)
+    motorista = models.ForeignKey(Motorista, on_delete=models.CASCADE)
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='AGUARDANDO'
+    )
+
+    mensagem_erro = models.TextField(blank=True, null=True)
+
+    # ✅ AGORA CORRETO
+    payload = models.JSONField(blank=True, null=True)
+
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Busca {self.numero_manifesto} - {self.motorista.nome_completo} - {self.status}"
+
+    class Meta:
+        verbose_name = "Busca de Manifesto"
+        verbose_name_plural = "Buscas de Manifestos"
+        unique_together = ('numero_manifesto', 'motorista')
+
 # 1. Códigos de Ocorrência do TMS
 class Ocorrencia(models.Model):
     """
@@ -28,48 +62,54 @@ class Ocorrencia(models.Model):
 
 # 2. Manifesto de Carga
 class Manifesto(models.Model):
-    """
-    O cabeçalho da entrega/coleta. O número do manifesto é único no sistema.
-    """
     STATUS_CHOICES = [
-        ('AGUARDANDO', 'Aguardando Início (Buscado, mas não iniciado)'),
-        ('TRANSPORTE', 'Em Transporte (Rota iniciada)'),
-        ('FINALIZADO', 'Finalizado (Com KM Final registrado)'),
-        ('CANCELADO', 'Cancelado (Pelo operacional)'),
+        ('EM_TRANSPORTE', 'Em Transporte'),
+        ('FINALIZADO', 'Finalizado'),
+        ('CANCELADO', 'Cancelado'),
     ]
+
+    numero_manifesto = models.CharField(
+        max_length=50,
+        unique=True,
+        verbose_name="Número do Manifesto"
+    )
+
+    motorista = models.ForeignKey(
+        Motorista,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='manifestos',
+        verbose_name="Motorista"
+    )
+
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
-        default='AGUARDANDO', # Estado inicial após a busca da Task
-        verbose_name="Status do Manifesto"
+        default='EM_TRANSPORTE'
     )
-    # ÚNICO: Garante que cada manifesto seja registrado apenas uma vez
-    numero_manifesto = models.CharField(max_length=50, unique=True, verbose_name="Número do Manifesto")
-    
-    # Vínculo com o motorista logado (Motorista > forenkey)
-    motorista = models.ForeignKey(
-        Motorista, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
-        related_name='manifestos_ativos',
-        verbose_name="Motorista Atribuído"
-    )
-    
+
     km_inicial = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     km_final = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    
+
     finalizado = models.BooleanField(default=False)
+
     data_criacao = models.DateTimeField(auto_now_add=True)
     data_finalizacao = models.DateTimeField(null=True, blank=True)
-    
+
     def __str__(self):
-        return f"Manifesto {self.numero_manifesto} - {self.motorista.nome_completo if self.motorista else 'N/A'}"
-    
+        return f"Manifesto {self.numero_manifesto}"
+
     class Meta:
         verbose_name = "Manifesto"
         verbose_name_plural = "Manifestos"
-
+        constraints = [
+            models.UniqueConstraint(
+                fields=['motorista'],
+                condition=models.Q(status='EM_TRANSPORTE'),
+                name='um_manifesto_em_transporte_por_motorista'
+            )
+        ]
 
 # 3. Notas Fiscais (Itens do Manifesto)
 class NotaFiscal(models.Model):
@@ -145,9 +185,20 @@ class BaixaNF(models.Model):
     
     # Vincula o código de ocorrência do TMS (o que o motorista escolheu no app)
     ocorrencia = models.ForeignKey(Ocorrencia, on_delete=models.SET_NULL, null=True, blank=True)
-    
+  
+    recebedor = models.CharField(max_length=100, null=True, blank=True)
+    documento_recebedor = models.CharField(max_length=20, null=True, blank=True)
     observacao = models.TextField(blank=True, null=True)
     data_baixa = models.DateTimeField(auto_now_add=True)
+    processado_tms = models.BooleanField(default=False, verbose_name="Integrado com ESL")
+    data_integracao = models.DateTimeField(null=True, blank=True)
+    log_erro_tms = models.TextField(null=True, blank=True, verbose_name="Log de Erro ESL")
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
 
     def __str__(self):
         return f"Baixa de {self.nota_fiscal.numero_nota} ({self.tipo})"
+    
+    class Meta:
+        verbose_name = "Nota Fiscal Baixada"
+        verbose_name_plural = "Notas Fiscais Baixadas"

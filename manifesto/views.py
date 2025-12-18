@@ -1,11 +1,12 @@
 # manifestos/views.py
-
+from rest_framework.views import APIView
+from .tasks import processa_manifesto_dataexport
 from rest_framework import views, status, generics
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
-from .models import Manifesto, NotaFiscal, Ocorrencia, BaixaNF
+from .models import Manifesto, NotaFiscal, Ocorrencia, BaixaNF, ManifestoBuscaLog
 from .tasks import processa_manifesto_dataexport, envia_baixa_para_tms
 from usuarios.models import Motorista
 from .serializers import (
@@ -13,70 +14,42 @@ from .serializers import (
     BaixaNFCreateSerializer, OcorrenciaSerializer
 )
 
-class ManifestoBuscaView(views.APIView):
-    """
-    GET: Retorna o manifesto ativo do motorista.
-    POST: Inicia a busca de um novo manifesto via Data Export (Celery Task).
-    """
+class BuscarManifestoView(APIView):
     permission_classes = [IsAuthenticated]
-    
-    # Rota GET: /api/manifesto/status/
-    def get(self, request):
-        motorista = request.user.motorista_perfil
-        try:
-            # Busca o manifesto que NÃO ESTÁ FINALIZADO
-            manifesto = Manifesto.objects.select_related('motorista').get(motorista=motorista, finalizado=False)
-            serializer = ManifestoSerializer(manifesto)
-            
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except Manifesto.DoesNotExist:
-            return Response({
-                'mensagem': 'Nenhum manifesto ativo. Pronto para buscar um novo.',
-                'status_manifesto': 'LIVRE'
-            }, status=status.HTTP_200_OK)
 
-    # Rota POST: /api/manifesto/busca/
-    # Rota POST: /api/manifesto/busca/
     def post(self, request):
-        serializer = ManifestoBuscaSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        numero_manifesto = serializer.validated_data['numero_manifesto']
+        numero = request.data.get('numero_manifesto')
         motorista = request.user.motorista_perfil
 
-        # 1. Prevenção de manifesto ativo (mantida)
-        if Manifesto.objects.filter(motorista=motorista, finalizado=False).exists():
-             return Response({
-                'mensagem': 'Você já possui um manifesto ativo. Finalize-o antes de buscar um novo.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        # 2. Chamada SÍNCRONA da Task Celery (Bloqueia o Gunicorn por até 10s, mas garante o resultado)
-        try:
-            # Chama a Task via apply_async e força o retorno com .get()
-            result = processa_manifesto_dataexport.apply_async(
-                args=[motorista.cpf, numero_manifesto]
-            )
-            # Espera até 10 segundos para o Celery terminar e retornar o resultado
-            task_result = result.get(timeout=10) 
-            
-            # Se a Task retornou um status de ERRO (como "Documento não confere")
-            if task_result.get('status') == 'erro':
-                return Response(
-                    {'mensagem': task_result['mensagem']}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Se a Task retornou SUCESSO (Status 200 OK)
+        if not numero:
             return Response(
-                {'mensagem': task_result['mensagem']}, 
-                status=status.HTTP_200_OK
+                {'erro': 'Número do manifesto é obrigatório'},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
-        except Exception as e:
-            # Timeout do Celery, erro de rede, etc.
+        # 🚫 Bloqueia se já existir manifesto ativo
+        if Manifesto.objects.filter(
+            motorista=motorista,
+            finalizado=False
+        ).exists():
             return Response(
-                {'mensagem': f'Erro ao processar manifesto (Timeout ou Falha Interna): {e}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {'erro': 'Você já possui um manifesto ativo'},
+                status=status.HTTP_409_CONFLICT
             )
+
+        # 🚀 Dispara a task REAL que busca e processa no TMS
+        processa_manifesto_dataexport.delay(
+            motorista_cpf=motorista.cpf,
+            numero_manifesto=numero
+        )
+
+        return Response(
+            {
+                'status': 'PROCESSANDO',
+                'mensagem': 'Manifesto em processamento. Aguarde.'
+            },
+            status=status.HTTP_202_ACCEPTED
+        )
 
 class BaixaNFView(views.APIView):
     """

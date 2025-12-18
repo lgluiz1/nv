@@ -1,0 +1,48 @@
+
+    :root {
+        --primary-color: #0d6efd;
+    }
+
+    .app-header {
+        height: 65px;
+        border-bottom: 1px solid #eee;
+        z-index: 1030;
+    }
+
+    .brand-area h1 {
+        letter-spacing: -0.5px;
+        line-height: 1;
+    }
+
+    .avatar-circle {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f8f9fa;
+        border-radius: 50%;
+        border: 2px solid #e9ecef;
+    }
+
+    /* Animação suave para o menu lateral */
+    .offcanvas {
+        width: 280px !important;
+    }
+
+    .list-group-item {
+        border: none;
+        font-weight: 500;
+        color: #495057;
+        transition: all 0.2s;
+    }
+
+    .list-group-item:hover {
+        background-color: #f0f7ff;
+        color: var(--primary-color);
+    }
+
+    .list-group-item i {
+        font-size: 1.2rem;
+        vertical-align: middle;
+    }

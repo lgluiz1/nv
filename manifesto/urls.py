@@ -1,20 +1,22 @@
-# manifestos/urls.py
-
+# manifesto/urls.py
 from django.urls import path
-from .views import (
-    ManifestoBuscaView, BaixaNFView, 
-    ManifestoFinalizacaoView, OcorrenciaListView
-)
+from manifesto.rotas.busca import BuscarManifestoView
+from manifesto.rotas.status import StatusBuscaManifestoView
+from manifesto.rotas.iniciar_transporte import IniciarTransporteView
+from manifesto.rotas.init import AppInitView
+from manifesto.rotas.preview import StatusPreviewManifestoView
+from manifesto.rotas.listagem import ListarNotasManifestoView
+from manifesto.rotas.verificacao import VerificarManifestoAtivoView
+from manifesto.rotas.baixa import RegistrarBaixaView
 
 urlpatterns = [
-    # Rotas de Manifesto e Status
-    path('manifesto/status/', ManifestoBuscaView.as_view(), name='manifesto_status'),
-    path('manifesto/busca/', ManifestoBuscaView.as_view(), name='manifesto_busca'),
-    path('manifesto/finalizar/', ManifestoFinalizacaoView.as_view(), name='manifesto_finalizar'),
-    
-    # Rota de Baixa (pk é o ID interno da NotaFiscal)
-    path('nf/<int:pk>/baixa/', BaixaNFView.as_view(), name='nf_baixa'),
-    
-    # Lista de Códigos de Ocorrência (para o PWA popular o modal)
-    path('ocorrencias/', OcorrenciaListView.as_view(), name='ocorrencia_list'),
+    path('manifesto/busca/', BuscarManifestoView.as_view()),
+    path('manifesto/status/', StatusBuscaManifestoView.as_view()),
+    path('manifesto/iniciar/', IniciarTransporteView.as_view()),
+    path('app/init/', AppInitView.as_view()),
+    path('manifesto/preview/', StatusPreviewManifestoView.as_view()),
+    path('manifesto/notas/', ListarNotasManifestoView.as_view()),
+    path('manifesto/verificar-ativo/', VerificarManifestoAtivoView.as_view()),
+    path('manifesto/registrar-baixa/', RegistrarBaixaView.as_view()),
+
 ]

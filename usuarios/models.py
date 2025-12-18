@@ -16,7 +16,9 @@ class Motorista(models.Model):
         User, 
         on_delete=models.CASCADE, 
         related_name='motorista_perfil',
-        verbose_name="Conta de Usuário"
+        verbose_name="Conta de Usuário",
+        null=True,
+        blank=True
     )
     
     # Campo CRÍTICO: Armazena o CPF (sem pontuação)
@@ -54,21 +56,7 @@ class Motorista(models.Model):
 
 
 # 2. Sinal (Signal) para Criação Automática do Perfil
-@receiver(post_save, sender=User)
-def create_user_profile(sender, instance, created, **kwargs):
-    """
-    Cria automaticamente um perfil Motorista quando um novo User é criado.
-    Isto é útil para criação de usuários via Admin ou shell.
-    """
-    if created and not hasattr(instance, 'motorista_perfil'):
-        # Tenta usar o username como CPF por padrão, mas pode ser ajustado
-        cpf_padrao = instance.username if len(instance.username) == 11 and instance.username.isdigit() else '00000000000'
-        
-        Motorista.objects.create(
-            user=instance, 
-            cpf=cpf_padrao,
-            nome_completo=instance.get_full_name() or instance.username
-        )
+
 
 @receiver(post_save, sender=User)
 def save_user_profile(sender, instance, **kwargs):

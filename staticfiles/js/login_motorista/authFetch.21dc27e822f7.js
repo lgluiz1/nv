@@ -1,0 +1,91 @@
+// authFetch.js
+
+// URL base para os dados (Notas, Baixas, Manifesto)
+const API_BASE = window.location.hostname.includes('ngrok')
+    ? 'https://1bdf6f7e1548.ngrok-free.app/api/'
+    : 'http://localhost:8089/api/';
+
+// URL base para Autenticação (Login, Refresh, Perfil)
+const AUTH_BASE = window.location.hostname.includes('ngrok')
+    ? 'https://1bdf6f7e1548.ngrok-free.app/auth/'
+    : 'http://localhost:8089/auth/';
+
+async function authFetch(url, options = {}) {
+    let access = localStorage.getItem('accessToken');
+
+    options.headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${access}`
+    };
+
+    if (!(options.body instanceof FormData)) {
+        options.headers['Content-Type'] = 'application/json';
+    }
+
+    try {
+        let response = await fetch(url, options);
+
+        if (response.status === 401) {
+            console.warn("Access Token expirado. Tentando renovação...");
+            const refreshed = await refreshToken();
+            
+            if (refreshed) {
+                // Tenta novamente a requisição original com o novo token
+                access = localStorage.getItem('accessToken');
+                options.headers.Authorization = `Bearer ${access}`;
+                return await fetch(url, options);
+            } else {
+                logout();
+                return null;
+            }
+        }
+        return response;
+    } catch (err) {
+        return null;
+    }
+}
+
+async function refreshToken() {
+    const refresh = localStorage.getItem('refreshToken');
+    
+    // Log para debug: veja se o token existe no console antes de enviar
+    console.log("Tentando refresh com o token:", refresh ? "Presente" : "AUSENTE");
+
+    if (!refresh) return false;
+
+    try {
+        const res = await fetch(`${AUTH_BASE}token/refresh/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh: refresh }) // O Django espera a chave "refresh"
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            localStorage.setItem('accessToken', data.access);
+            if (data.refresh) {
+                localStorage.setItem('refreshToken', data.refresh);
+            }
+            return true;
+        }
+        
+        // Se retornar 401 aqui, o token de refresh no banco/localStorage é inválido
+        console.error("Refresh falhou no servidor:", await res.text());
+        return false;
+    } catch (err) {
+        return false;
+    }
+}
+
+
+
+// Chame isso no DOMContentLoaded
+document.addEventListener('DOMContentLoaded', () => {
+    atualizarDadosHeader();
+});
+function logout() {
+    localStorage.clear();
+    if (!window.location.pathname.includes('/login/')) {
+        window.location.href = '/app/login/';
+    }
+}

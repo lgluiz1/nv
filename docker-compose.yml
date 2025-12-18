@@ -23,13 +23,18 @@ services:
   backend:
     build: .
     container_name: transportadora_backend
-    # COMANDO AJUSTADO: Usa 'core.wsgi' para iniciar o Gunicorn
-    command: sh -c "python manage.py collectstatic --noinput && python manage.py migrate && gunicorn core.wsgi:application --bind 0.0.0.0:8000"
+    command: >
+      sh -c "
+      python manage.py collectstatic --noinput &&
+      python manage.py makemigrations &&
+      python manage.py migrate &&
+      gunicorn core.wsgi:application --bind 0.0.0.0:8089
+      "
     volumes:
       - .:/transportadora_backend
       - media_data:/transportadora_backend/media
     ports:
-      - "8099:8000"
+      - "8089:8089"
     env_file:
       - .env
     depends_on:
@@ -41,7 +46,6 @@ services:
   celery_worker:
     build: .
     container_name: transportadora_celery_worker
-    # COMANDO AJUSTADO: Usa '-A core' para carregar a aplicação Celery em core/celery.py
     command: celery -A core worker -l info
     volumes:
       - .:/transportadora_backend
@@ -52,12 +56,12 @@ services:
       - redis
     restart: always
 
+
   # 5. Agendador do Celery Beat (Tarefas Recorrentes)
   celery_beat:
     build: .
     container_name: transportadora_celery_beat
-    # COMANDO AJUSTADO: Usa '-A core' para carregar a aplicação Celery
-    command: celery -A core beat -l info --scheduler django_celery_beat.schedulers.DatabaseScheduler
+    command: sh ./entrypoint.sh
     volumes:
       - .:/transportadora_backend
     env_file:
@@ -66,6 +70,9 @@ services:
       - db
       - redis
     restart: always
+
+
+
 
 volumes:
   postgres_data:

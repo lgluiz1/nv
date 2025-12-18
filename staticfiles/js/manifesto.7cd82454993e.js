@@ -1,0 +1,466 @@
+// =====================================================
+// CONFIGURAÇÕES
+// =====================================================
+const API_BASE = window.location.hostname.includes('ngrok')
+  ? 'https://1bdf6f7e1548.ngrok-free.app/api/'
+  : 'http://localhost:8089/api/';
+
+const ENDPOINTS = {
+    busca: `${API_BASE}manifesto/busca/`,
+    status: `${API_BASE}manifesto/status/`,
+    iniciar: `${API_BASE}manifesto/iniciar/`
+};
+
+const LOGIN_URL = '/app/login/';
+
+let loadingModal = null;
+let pollingInterval = null;
+let manifestoAtual = null;
+let streamFull = null; // Variável global para o stream da câmera
+
+// =====================================================
+// INIT
+// =====================================================
+document.addEventListener('DOMContentLoaded', () => {
+    initModals();
+    verificarEstadoInicial(); 
+});
+
+async function verificarEstadoInicial() {
+    const headers = getAuthHeaders();
+    if (!headers) return;
+
+    try {
+        const response = await fetch(`${API_BASE}manifesto/verificar-ativo/`, { headers });
+        const data = await response.json();
+
+        if (data.tem_manifesto) {
+            renderListaEntregas(data.numero_manifesto);
+        } else {
+            renderSearchScreen();
+        }
+    } catch (err) {
+        console.error("Erro ao verificar estado:", err);
+        renderSearchScreen();
+    }
+}
+
+// =====================================================
+// AUTH & MODAIS
+// =====================================================
+function initModals() {
+    const loadingEl = document.getElementById('loadingModal');
+    if (loadingEl) loadingModal = new bootstrap.Modal(loadingEl);
+}
+
+function getAuthHeaders() {
+    const token = localStorage.getItem('accessToken');
+    if (!token) { logout(); return null; }
+    return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+}
+
+function logout() {
+    localStorage.removeItem('accessToken');
+    window.location.href = LOGIN_URL;
+}
+
+// =====================================================
+// TELAS (BUSCA / PREVIEW / LISTAGEM)
+// =====================================================
+function renderSearchScreen(message = null, type = 'info') {
+    stopPolling();
+    const content = document.getElementById('app-content');
+    const alertHTML = message ? `<div class="alert alert-${type === 'error' ? 'danger' : 'info'}">${message}</div>` : '';
+
+    content.innerHTML = `
+        <div class="card shadow-sm p-4 mt-3">
+            <h5 class="text-primary mb-3">Buscar Manifesto</h5>
+            ${alertHTML}
+            <form id="search-form">
+                <input type="number" id="manifesto-number" class="form-control mb-3" placeholder="Número do Manifesto" required />
+                <button class="btn btn-primary w-100">Buscar</button>
+            </form>
+        </div>
+    `;
+    document.getElementById('search-form').addEventListener('submit', handleManifestoSearch);
+}
+
+async function handleManifestoSearch(event) {
+    event.preventDefault();
+    const numero = document.getElementById('manifesto-number').value.trim();
+    const headers = getAuthHeaders();
+    if (!headers) return;
+
+    manifestoAtual = numero;
+    loadingModal?.show();
+
+    try {
+        await fetch(ENDPOINTS.busca, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ numero_manifesto: numero }),
+        });
+        startPolling();
+    } catch (err) {
+        loadingModal?.hide();
+        renderSearchScreen('Erro de conexão', 'error');
+    }
+}
+
+function startPolling() {
+    stopPolling();
+    pollingInterval = setInterval(async () => {
+        try {
+            const response = await fetch(`${ENDPOINTS.status}?numero_manifesto=${manifestoAtual}`, { headers: getAuthHeaders() });
+            const data = await response.json();
+
+            if (data.status === 'PROCESSADO') {
+                stopPolling();
+                loadingModal?.hide();
+                renderManifestoPreview(data.payload);
+            }
+        } catch (err) { stopPolling(); }
+    }, 2000);
+}
+
+function stopPolling() {
+    if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+}
+
+function renderManifestoPreview(payload) {
+    const content = document.getElementById('app-content');
+    const numeroManifesto = payload[0].sequence_code;
+    content.innerHTML = `
+        <div class="card shadow-sm mt-3 p-3">
+            <h5>Manifesto #${numeroManifesto}</h5>
+            <button class="btn btn-primary w-100 mt-3" onclick="iniciarTransporte('${numeroManifesto}')">INICIAR TRANSPORTE</button>
+        </div>
+    `;
+}
+
+async function iniciarTransporte(numeroManifesto) {
+    loadingModal?.show();
+    try {
+        const response = await fetch(ENDPOINTS.iniciar, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ numero_manifesto: numeroManifesto }),
+        });
+        if (response.ok) monitorarCriacaoNFs(numeroManifesto);
+    } catch (err) { loadingModal?.hide(); }
+}
+
+function monitorarCriacaoNFs(numeroManifesto) {
+    const interval = setInterval(async () => {
+        const response = await fetch(`${ENDPOINTS.status}?numero_manifesto=${numeroManifesto}`, { headers: getAuthHeaders() });
+        const data = await response.json();
+        if (data.status === 'PROCESSADO') {
+            clearInterval(interval);
+            loadingModal?.hide();
+            renderListaEntregas(numeroManifesto);
+        }
+    }, 2000);
+}
+
+async function renderListaEntregas(numeroManifesto) {
+    const content = document.getElementById('app-content');
+    try {
+        const response = await fetch(`${API_BASE}manifesto/notas/?numero_manifesto=${numeroManifesto}`, { 
+            headers: getAuthHeaders() 
+        });
+        const notas = await response.json();
+        
+        console.log("Notas recebidas do servidor:", notas); 
+        
+        let htmlNotas = '';
+
+        // O SEGREDO: O loop agora verifica se a nota ja foi baixada
+        notas.forEach(nf => {
+            let cardHtml = "";
+            const chaveValida = nf.chave_acesso && nf.chave_acesso !== "null" ? nf.chave_acesso : "";
+            
+            if (nf.ja_baixada) {
+                // 🟢 Layout Verde para Notas Baixadas
+                // Usamos JSON.stringify para passar os dados capturados (foto/gps) para o modal
+                cardHtml = `
+                    <div class="card mb-3 shadow-sm border-start border-success border-4 bg-light">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="fw-bold mb-0 text-success">NF ${nf.numero_nota}</h6>
+                                <span class="badge bg-success text-uppercase">Concluído</span>
+                            </div>
+                            <p class="small text-muted mb-2">${nf.destinatario}</p>
+                            <button class="btn btn-sm btn-success w-100" 
+                                    onclick='abrirModalDetalhes(${JSON.stringify(nf.dados_baixa)})'>
+                                <i class="bi bi-eye"></i> Ver Detalhes da Baixa
+                            </button>
+                        </div>
+                    </div>`;
+            } else {
+                // 🔵 Layout Azul para Notas Pendentes
+                cardHtml = `
+                    <div class="card mb-3 shadow-sm border-start border-primary border-4">
+                        <div class="card-body">
+                            <h6 class="fw-bold">NF ${nf.numero_nota}</h6>
+                            <p class="small text-muted mb-1">${nf.destinatario}</p>
+                            <p class="small text-muted mb-3"><i class="bi bi-geo-alt"></i> ${nf.endereco_entrega}</p>
+                            
+                            <button class="btn btn-sm btn-primary w-100" 
+                                    ${!chaveValida ? 'disabled' : ''} 
+                                    onclick="abrirModalBaixa('${nf.numero_nota}', '${chaveValida}')">
+                                ${chaveValida ? 'Dar Baixa' : 'Chave NF Ausente'}
+                            </button>
+                        </div>
+                    </div>`;
+            }
+            htmlNotas += cardHtml;
+        });
+
+        content.innerHTML = `
+            <div class="animate__animated animate__fadeIn pb-5"> 
+                <h5 class="mb-3 fw-bold text-secondary">Notas do Manifesto ${numeroManifesto}</h5>
+                ${htmlNotas}
+                <div style="height: 80px;"></div> 
+            </div>
+        `;
+    } catch (err) { 
+        console.error("Erro ao renderizar lista:", err); 
+    }
+}
+
+// =====================================================
+// LÓGICA DA CÂMERA (TELA CHEIA)
+// =====================================================
+
+function abrirModalBaixa(numeroNota, chaveAcesso) {
+    const tituloEl = document.getElementById('modal-titulo-nf');
+    const inputChave = document.getElementById('hidden-chave-nf');
+
+    if (!tituloEl || !inputChave) return;
+
+    tituloEl.innerText = `Ocorrência NF-e ${numeroNota}`;
+    inputChave.value = chaveAcesso;
+
+    resetarInterfaceCamera();
+
+    const modalBaixa = new bootstrap.Modal(document.getElementById('modalBaixa'));
+    modalBaixa.show();
+}
+
+function resetarInterfaceCamera() {
+    const canvas = document.getElementById('canvas-preview');
+    const placeholder = document.getElementById('placeholder-camera');
+    if (canvas) canvas.style.display = 'none';
+    if (placeholder) placeholder.style.display = 'block';
+}
+
+// ESTA FUNÇÃO SUBSTITUI A ANTIGA "ligarCamera"
+async function ligarCameraFull() {
+    const overlay = document.getElementById('full-screen-camera');
+    const video = document.getElementById('video-full');
+
+    try {
+        streamFull = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "environment" }, 
+            audio: false 
+        });
+        video.srcObject = streamFull;
+        overlay.style.display = 'block'; 
+    } catch (err) {
+        // Fallback para qualquer câmera se a traseira falhar (comum em PCs)
+        try {
+            streamFull = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = streamFull;
+            overlay.style.display = 'block';
+        } catch (err2) {
+            alert("Erro ao acessar câmera: " + err2);
+        }
+    }
+}
+
+function capturarFotoFull() {
+    const video = document.getElementById('video-full');
+    const canvas = document.getElementById('canvas-preview');
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+
+    canvas.style.display = 'block';
+    document.getElementById('placeholder-camera').style.display = 'none';
+    
+    fecharCameraFull();
+}
+
+function fecharCameraFull() {
+    if (streamFull) {
+        streamFull.getTracks().forEach(track => track.stop());
+    }
+    document.getElementById('full-screen-camera').style.display = 'none';
+}
+
+// =====================================================
+// SALVAR NO BACKEND
+// =====================================================
+async function salvarRegistro() {
+    const cod = document.getElementById('select-ocorrencia').value;
+    const recebedor = document.getElementById('input-recebedor').value;
+    const canvas = document.getElementById('canvas-preview');
+    const temFoto = (canvas.style.display === 'block');
+    const chaveNF = document.getElementById('hidden-chave-nf').value;
+
+    if ((cod === "1" || cod === "2") && !temFoto) {
+        alert("A foto é obrigatória para este código!");
+        return;
+    }
+
+    loadingModal?.show();
+    const formData = new FormData();
+    formData.append('ocorrencia_codigo', cod);
+    formData.append('chave_acesso', chaveNF);
+    formData.append('recebedor', recebedor);
+    
+    if (temFoto) {
+        const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.8));
+        formData.append('foto', blob, `${chaveNF}.jpg`);
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}manifesto/registrar-baixa/`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` },
+            body: formData
+        });
+        if (response.ok) {
+            alert("Sucesso!");
+            location.reload();
+        }
+    } catch (err) { alert("Erro ao salvar."); }
+    finally { loadingModal?.hide(); }
+}
+
+function getCoords() {
+    return new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+            () => resolve(null), // Se der erro ou recusar, segue sem GPS
+            { timeout: 5000 }
+        );
+    });
+}
+
+async function salvarRegistro() {
+    const token = localStorage.getItem('accessToken');
+    
+    // Se não tiver token, nem tenta enviar e manda para o login
+    if (!token) {
+        alert("Sessão expirada. Por favor, faça login novamente.");
+        window.location.href = '/app/login/';
+        return;
+    }
+
+    const cod = document.getElementById('select-ocorrencia').value;
+    const chaveNF = document.getElementById('hidden-chave-nf').value;
+    const canvas = document.getElementById('canvas-preview');
+    const temFoto = (canvas.style.display === 'block');
+
+    loadingModal?.show();
+
+    const formData = new FormData();
+    formData.append('ocorrencia_codigo', cod);
+    formData.append('chave_acesso', chaveNF);
+    formData.append('recebedor', document.getElementById('input-recebedor').value || '');
+
+    // GPS
+    const coords = await getCoords();
+    if (coords) {
+        formData.append('latitude', coords.lat);
+        formData.append('longitude', coords.lon);
+    }
+
+    // Foto
+    if (temFoto) {
+        const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.8));
+        formData.append('foto', blob, `${chaveNF}.jpg`);
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}manifesto/registrar-baixa/`, {
+            method: 'POST',
+            headers: {
+                // AQUI ESTÁ A AUTENTICAÇÃO
+                'Authorization': `Bearer ${token}` 
+                // NOTA: Não coloque 'Content-Type': 'application/json' aqui!
+            },
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            alert("Baixa realizada com sucesso!");
+            location.reload();
+        } else {
+            // Se der erro 400 ou 401, o alerta mostrará o motivo
+            alert("Erro: " + (data.erro || data.detail || "Falha no registro"));
+        }
+    } catch (err) {
+        alert("Erro de conexão com o servidor.");
+    } finally {
+        loadingModal?.hide();
+    }
+}
+
+function abrirModalDetalhes(dados) {
+    console.log("Exibindo detalhes:", dados);
+    
+    const container = document.getElementById('modal-detalhes-body');
+    
+    if (!container) {
+        console.error("Erro: Elemento 'modal-detalhes-body' não encontrado no HTML.");
+        return;
+    }
+
+    // Monta o conteúdo com base no que foi salvo no banco
+    let html = `
+        <div class="mb-3 border-bottom pb-2">
+            <small class="text-muted d-block">Status do Registro</small>
+            <span class="badge ${dados.tipo === 'ENTREGA' ? 'bg-success' : 'bg-warning'}">
+                ${dados.tipo} - ${dados.ocorrencia}
+            </span>
+        </div>
+        
+        <div class="mb-3">
+            <small class="text-muted d-block">Data e Hora:</small>
+            <div class="fw-bold">${dados.data}</div>
+        </div>
+
+        <div class="mb-3">
+            <small class="text-muted d-block">Recebedor:</small>
+            <div class="fw-bold">${dados.recebedor || 'Não informado'}</div>
+        </div>
+
+        ${dados.foto_url ? `
+            <div class="mb-3">
+                <small class="text-muted d-block mb-1">Foto do Comprovante:</small>
+                <img src="${dados.foto_url}" class="img-fluid rounded border shadow-sm w-100" style="max-height: 250px; object-fit: cover;">
+            </div>
+        ` : ''}
+
+        ${dados.lat && dados.lng ? `
+            <div class="mt-3">
+                <a href="https://www.google.com/maps?q=${dados.lat},${dados.lng}" target="_blank" class="btn btn-sm btn-outline-primary w-100">
+                    <i class="bi bi-geo-alt"></i> Ver Localização no Mapa
+                </a>
+            </div>
+        ` : ''}
+    `;
+
+    container.innerHTML = html;
+
+    // Abre o modal usando o Bootstrap
+    const modalEl = document.getElementById('modalDetalhes');
+    const modalInstancia = new bootstrap.Modal(modalEl);
+    modalInstancia.show();
+}

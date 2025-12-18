@@ -7,22 +7,27 @@ import os
 from dotenv import load_dotenv
 from datetime import timedelta
 
-load_dotenv()
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 # BASE_DIR aponta para o diretório raiz do projeto (BackendAPP/)
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+load_dotenv(BASE_DIR / '.env')
 
 # Quick-start development settings - unsuitable for production
 SECRET_KEY = os.getenv('SECRET_KEY', 'default-safe-key-if-not-in-env')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,0.0.0.0').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,0.0.0.0,').split(',')
 
+CSRF_TRUSTED_ORIGINS = [
+    'https://1bdf6f7e1548.ngrok-free.app',
+]
 
 # Application definition
 
 INSTALLED_APPS = [
+    "unfold",  # 👈 Deve ser o primeiro da lista
+    "unfold.contrib.filters",  # Opcional: Filtros avançados
+    "unfold.contrib.forms",  
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -30,16 +35,33 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     
+    
     # Terceiros
     'rest_framework',
     'rest_framework_simplejwt', # Adicionado para JWT
+    'rest_framework_simplejwt.token_blacklist',
     'django_celery_beat',
+    'corsheaders',
+    'channels',
+    'pwa',
     
     # Nossas Apps
     'usuarios',
     'manifesto',   # CORREÇÃO: Deve ser 'manifestos' (plural)
     'mobile',
 ]
+# Configurar Redis como channel layer
+# settings.py ou celery.py
+CELERY_BROKER_URL = 'redis://redis:6379/0'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [('redis', 6379)],
+        },
+    },
+}
 
 # (Deve ser a URL da sua página HTML de login)
 LOGIN_URL = '/app/login/'
@@ -48,6 +70,7 @@ LOGIN_URL = '/app/login/'
 LOGIN_REDIRECT_URL = '/app/'
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -57,6 +80,11 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+CORS_ALLOW_CREDENTIALS = True
+
+# Configuração para servir arquivos de mídia (Fotos de comprovantes) em ambiente de desenvolvimento
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
 
 ROOT_URLCONF = 'core.urls'
 
@@ -150,11 +178,63 @@ REST_FRAMEWORK = {
 
 # --- Configurações JWT (JSON Web Token) ---
 SIMPLE_JWT = {
-    # Tempo de vida do token de acesso (curto)
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15), 
-    # Tempo de vida do token de refresh
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7), 
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
 
-    # Permite que o login use o campo 'username' (que será o CPF)
-    'USERNAME_FIELD': 'username', 
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+
+    'AUTH_HEADER_TYPES': ('Bearer',),
 }
+
+# Configurações do PWA
+PWA_APP_NAME = 'Transportadora App'
+PWA_APP_DESCRIPTION = "Aplicativo para gestão de entregas e manifestos"
+PWA_APP_THEME_COLOR = '#0d6efd' # Cor azul do seu app
+PWA_APP_BACKGROUND_COLOR = '#ffffff'
+PWA_APP_DISPLAY = 'standalone'
+PWA_APP_SCOPE = '/'
+PWA_APP_ORIENTATION = 'portrait'
+PWA_APP_START_URL = '/app/' # Página inicial do motorista
+PWA_APP_STATUS_BAR_COLOR = 'default'
+
+# Ícones (você precisará criar essas imagens na sua pasta static)
+PWA_APP_ICONS = [
+    {
+        'src': '/static/images/icon-160x160.png',
+        'sizes': '160x160'
+    },
+    {
+        'src': '/static/images/icon-512x512.png',
+        'sizes': '512x512'
+    }
+]
+
+PWA_SERVICE_WORKER_PATH = 'static/js/serviceworker.js'
+
+UNFOLD = {
+    "SITE_TITLE": "Transportadora App",
+    "SITE_HEADER": "Painel Logístico",
+    "COLORS": {
+        "primary": {
+            "50": "250 252 255",
+            "100": "240 247 255",
+            "500": "13 110 253", # Seu azul padrão
+            "900": "10 30 100",
+        },
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": True,
+    }
+}
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
+# Garante que o Django gere URLs estáticas com HTTPS quando necessário
+if not DEBUG: # Ou remova o 'if' se quiser testar no ngrok agora
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
