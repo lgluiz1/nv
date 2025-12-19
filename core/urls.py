@@ -3,8 +3,11 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static # Necessário para arquivos de mídia
+from django.views.generic import RedirectView
 
 urlpatterns = [
+    # Redireciona a raiz (/) para /app/login/
+    path('', RedirectView.as_view(url='/app/login/', permanent=True)),
     path('admin/', admin.site.urls),
     path('api/auth/', include('core.rotas.auth')),
     path('auth/', include(('usuarios.urls', 'usuarios'), namespace='usuarios')),
