@@ -1,15 +1,13 @@
 // authFetch.js
 
-// URL base para os dados (Notas, Baixas, Manifesto)
-const API_BASE = window.location.hostname.includes('ngrok')
-    ? 'https://1bdf6f7e1548.ngrok-free.app/api/'
-    : 'http://localhost:8089/api/';
+// Pega o domínio atual (ex: http://localhost:8089 ou https://pwa.suaempresa.com)
+const BASE_URL = window.location.origin;
 
-// URL base para Autenticação (Login, Refresh, Perfil)
-const AUTH_BASE = window.location.hostname.includes('ngrok')
-    ? 'https://1bdf6f7e1548.ngrok-free.app/auth/'
-    : 'http://localhost:8089/auth/';
+// Monta as URLs de API e Auth baseadas no domínio que está acessando agora
+const API_BASE = `${BASE_URL}/api/`;
+const AUTH_BASE = `${BASE_URL}/auth/`;
 
+console.log("Servidor detectado:", BASE_URL);
 async function initAuth() {
     const refresh = localStorage.getItem('refreshToken');
 

@@ -1,10 +1,9 @@
 // =====================================================
 // CONFIGURAÇÕES DE API
+// Pega o domínio atual (ex: http://localhost:8089 ou https://pwa.suaempresa.com)
+const BASE_URL = window.location.origin;
 // =====================================================
-const API_BASE = window.location.hostname.includes('ngrok')
-    ? 'https://1bdf6f7e1548.ngrok-free.app/api/auth/'
-    : 'http://localhost:8089/api/auth/';
-
+const API_BASE = `${BASE_URL}/api/auth/`;
 // =====================================================
 // ELEMENTOS DO DOM
 // =====================================================

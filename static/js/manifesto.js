@@ -257,16 +257,35 @@ function resetarInterfaceCamera() {
 async function ligarCameraFull() {
     const overlay = document.getElementById('full-screen-camera');
     const video = document.getElementById('video-full');
+    
+    const constraints = {
+        video: {
+            facingMode: "environment",
+            // Força a resolução Full HD para leitura nítida de textos
+            width: { min: 1280, ideal: 1920 }, 
+            height: { min: 720, ideal: 1080 },
+            // Tenta focar continuamente (se suportado pelo hardware)
+            focusMode: "continuous" 
+        },
+        audio: false
+    };
+
     try {
-        streamFull = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+        streamFull = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = streamFull;
         overlay.style.display = 'block'; 
+        
+        // Pequeno truque: força o foco após 1 segundo
+        const track = streamFull.getVideoTracks()[0];
+        const capabilities = track.getCapabilities();
+        if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+            await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+        }
     } catch (err) {
-        try {
-            streamFull = await navigator.mediaDevices.getUserMedia({ video: true });
-            video.srcObject = streamFull;
-            overlay.style.display = 'block';
-        } catch (err2) { alert("Câmera indisponível."); }
+        // Fallback simples se o HD falhar
+        streamFull = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = streamFull;
+        overlay.style.display = 'block';
     }
 }
 
@@ -274,9 +293,21 @@ function capturarFotoFull() {
     const video = document.getElementById('video-full');
     const canvas = document.getElementById('canvas-preview');
     const ctx = canvas.getContext('2d');
+
+    // Sincroniza o tamanho do canvas com a resolução real do vídeo capturado
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
+    
+    // Desativa a suavização para manter as bordas das letras nítidas
+    ctx.imageSmoothingEnabled = false;
+    
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Converte para Blob com qualidade alta (0.8 é o sweet spot para HD)
+    canvas.toBlob((blob) => {
+        fotoArquivoParaUpload = blob; // Variável que seu FormData vai usar
+    }, 'image/jpeg', 0.85);
+
     canvas.style.display = 'block';
     document.getElementById('placeholder-camera').style.display = 'none';
     fecharCameraFull();
