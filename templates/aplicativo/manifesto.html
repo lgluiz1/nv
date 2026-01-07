@@ -77,7 +77,7 @@
         </button>
     </div>
 </div>
-    <div class="container py-3">
+    <div class="container py-3 d-flex flex-column min-vh-100 justify-content-center align-items-center">
     <div id="app-content">
         <div class="text-center my-5">
             <div class="spinner-border text-primary" role="status" id="loadingSpinner">
@@ -109,7 +109,7 @@
               <span class="visually-hidden">Processando...</span>
             </div>
             <h5 class="mt-3" id="loadingModalLabel">Buscando Manifesto...</h5>
-            <p>Processando dados no TMS (Assíncrono). Aguarde.</p>
+            <p>Validando dados do manifesto...</p>
           </div>
         </div>
       </div>
@@ -254,16 +254,16 @@
                 </div>
 
                 <div class="d-grid gap-2">
-                    <button type="button" class="btn btn-outline-secondary" id="btn-abrir-camera" onclick="ligarCameraFull()">
-                        <i class="bi bi-camera-fill"></i> Abrir Câmera
-                    </button>
-                    <button type="button" class="btn btn-primary" id="btn-capturar" onclick="tirarFoto()" style="display: none;">
-                        <i class="bi bi-circle-fill"></i> Capturar Foto
-                    </button>
-                    <button type="button" class="btn btn-warning" id="btn-nova-foto" onclick="ligarCameraFull()" style="display: none;">
-                        Tirar outra foto
-                    </button>
-                </div>
+    <label for="camera-nativa" class="btn btn-outline-secondary" id="label-camera">
+        <i class="bi bi-camera-fill"></i> Abrir Câmera
+    </label>
+    
+    <input type="file" id="camera-nativa" accept="image/*" capture="camera" style="display: none;">
+
+    <label for="camera-nativa" class="btn btn-warning" id="btn-nova-foto" style="display: none;">
+        Tirar outra foto
+    </label>
+</div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>

@@ -1,101 +1,52 @@
-// manifesto.js
+// manifesto.js - VERSÃO FINAL REVISADA E OTIMIZADA
 // =====================================================
-// CONFIGURAÇÕES
+// CONFIGURAÇÕES E ESTADO GLOBAL
 // =====================================================
-//const API_BASE = window.location.hostname.includes('ngrok')
-//    ? 'https://1bdf6f7e1548.ngrok-free.app/api/'
-//    : 'http://localhost:8089/api/';
-
 const ENDPOINTS = {
     busca: `${API_BASE}manifesto/busca/`,
     status: `${API_BASE}manifesto/status/`,
-    iniciar: `${API_BASE}manifesto/iniciar/`
 };
 
 const LOGIN_URL = '/app/login/';
-
 let loadingModal = null;
 let pollingInterval = null;
 let manifestoAtual = null;
-let streamFull = null;
+let jaMudouDeTela = false;
 
 // =====================================================
-// INIT
+// INICIALIZAÇÃO (INIT)
 // =====================================================
 document.addEventListener('DOMContentLoaded', async () => {
     initModals();
 
     const authenticated = await initAuth();
-if (authenticated) {
-    atualizarDadosHeader();
-    verificarEstadoInicial();
-} else {
-    window.location.href = LOGIN_URL;
-}
+    if (authenticated) {
+        atualizarDadosHeader();
+        verificarEstadoInicial();
+
+        const inputCamera = document.getElementById('camera-nativa');
+        if (inputCamera) {
+            inputCamera.addEventListener('change', handleCameraNativa);
+        }
+    } else {
+        window.location.href = LOGIN_URL;
+    }
 });
 
-/**
- * Verifica se já existe um manifesto em transporte.
- * Agora utiliza authFetch para garantir renovação de token automática.
- */
-async function verificarEstadoInicial() {
-    try {
-        // Usamos authFetch para lidar com o erro 401 automaticamente
-        const response = await authFetch(`${API_BASE}manifesto/verificar-ativo/`);
-        
-        // Se a resposta não for ok e o authFetch não deslogou (ex: erro 500), manda pro login
-        if (!response || !response.ok) {
-    console.warn("Falha ao verificar manifesto ativo");
-    return;
-}
-
-        const data = await response.json();
-
-        if (data.tem_manifesto) {
-            renderListaEntregas(data.numero_manifesto);
-        } else {
-            renderSearchScreen();
-        }
-    } catch (err) {
-        console.error("Erro crítico ao verificar estado:", err);
-        logout(); // Em caso de erro de rede persistente ou token inválido
-    }
-}
-
 // =====================================================
-// MODAIS E AUXILIARES
+// FLUXO DE BUSCA E MONITORAMENTO (POLLING VIVO)
 // =====================================================
-function initModals() {
-    const loadingEl = document.getElementById('loadingModal');
-    if (loadingEl) loadingModal = new bootstrap.Modal(loadingEl);
-}
-
-// =====================================================
-// TELAS (BUSCA / PREVIEW / LISTAGEM)
-// =====================================================
-function renderSearchScreen(message = null, type = 'info') {
-    stopPolling();
-    const content = document.getElementById('app-content');
-    const alertHTML = message ? `<div class="alert alert-${type === 'error' ? 'danger' : 'info'}">${message}</div>` : '';
-
-    content.innerHTML = `
-        <div class="card shadow-sm p-4 mt-3">
-            <h5 class="text-primary mb-3">Buscar Manifesto</h5>
-            ${alertHTML}
-            <form id="search-form">
-                <input type="number" id="manifesto-number" class="form-control mb-3" placeholder="Número do Manifesto" required />
-                <button class="btn btn-primary w-100">Buscar</button>
-            </form>
-        </div>
-    `;
-    document.getElementById('search-form').addEventListener('submit', handleManifestoSearch);
-}
 
 async function handleManifestoSearch(event) {
     event.preventDefault();
     const numero = document.getElementById('manifesto-number').value.trim();
-    
+    if (!numero) return;
+
     manifestoAtual = numero;
+
+    const loadingText = document.getElementById('loadingMessage');
+    if (loadingText) loadingText.innerText = "Validando acesso e motorista...";
+    
     loadingModal?.show();
 
     try {
@@ -108,229 +59,173 @@ async function handleManifestoSearch(event) {
             startPolling();
         } else {
             loadingModal?.hide();
-            renderSearchScreen('Manifesto não encontrado ou erro na busca', 'error');
+            renderSearchScreen('Manifesto não encontrado ou erro no servidor.', 'error');
         }
     } catch (err) {
         loadingModal?.hide();
-        renderSearchScreen('Erro de conexão', 'error');
+        renderSearchScreen('Erro de conexão com o servidor.', 'error');
     }
 }
 
 function startPolling() {
     stopPolling();
+    jaMudouDeTela = false; 
+
     pollingInterval = setInterval(async () => {
         try {
-            const response = await authFetch(`${ENDPOINTS.status}?numero_manifesto=${manifestoAtual}`);
+            const response = await authFetch(`${API_BASE}manifesto/status/?numero_manifesto=${manifestoAtual}`);
+            
+            // PROTEÇÃO 401: Ignora ciclo se o token estiver renovando
+            if (!response || response.status === 401) {
+                console.warn("Autenticação em renovação...");
+                return; 
+            }
+
             const data = await response.json();
 
+            // 1. ESTADO DE CARREGAMENTO: Notas aparecendo uma a uma
+            if (data.status === 'ENRIQUECENDO' || data.status === 'AGUARDANDO' || data.status === 'PROCESSANDO') {
+                if (!jaMudouDeTela) {
+                    jaMudouDeTela = true;
+                    loadingModal?.hide(); 
+                    renderEstruturaLista(manifestoAtual);
+                } else {
+                    atualizarListaViva(manifestoAtual);
+                }
+            }
+
+            // 2. ESTADO FINAL: Carga concluída (5 a 50 notas)
             if (data.status === 'PROCESSADO') {
                 stopPolling();
+                await atualizarListaViva(manifestoAtual); 
+                
+                const contador = document.getElementById('contador-notas');
+                if (contador) {
+                    contador.className = "badge bg-success animate__animated animate__bounceIn";
+                    contador.innerText = "✅ Sincronização Concluída";
+                }
+
+                // Finaliza e recarrega para estabilizar banco local
+                setTimeout(() => { window.location.reload(); }, 1500);
+            } 
+            else if (data.status === 'ERRO') {
+                stopPolling();
                 loadingModal?.hide();
-                renderManifestoPreview(data.payload);
+                renderSearchScreen(data.mensagem_erro || 'Erro no processamento', 'error');
             }
-        } catch (err) { stopPolling(); }
-    }, 2000);
+        } catch (err) { 
+            console.error("Erro no ciclo de polling:", err); 
+        }
+    }, 3000);
 }
 
-function stopPolling() {
-    if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
-}
+// =====================================================
+// RENDERIZAÇÃO DINÂMICA (INCREMENTAL)
+// =====================================================
 
-function renderManifestoPreview(payload) {
+function renderEstruturaLista(numeroManifesto) {
     const content = document.getElementById('app-content');
-    const numeroManifesto = payload[0].sequence_code;
+    if (!content) return;
+
     content.innerHTML = `
-        <div class="card shadow-sm mt-3 p-3 text-center">
-            <h5 class="text-primary">Manifesto #${numeroManifesto}</h5>
-            <p class="text-muted small">Clique abaixo para iniciar a rota.</p>
-            <button class="btn btn-primary btn-lg w-100 mt-3" onclick="iniciarTransporte('${numeroManifesto}')">
-                <i class="bi bi-play-fill"></i> INICIAR TRANSPORTE
-            </button>
+        <div class="container pb-5 animate__animated animate__fadeIn">
+            <div class="text-center mb-4">
+                <h5 class="fw-bold text-secondary mb-1">Manifesto #${numeroManifesto}</h5>
+                <div id="progresso-container" class="mt-2">
+                    <span id="contador-notas" class="badge bg-primary px-3 py-2">Buscando as NF-es...</span>
+                </div>
+            </div>
+            
+            <div id="lista-notas-container">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary mb-3" role="status"></div>
+                    <p class="text-muted">Conectando à ESL e preparando sua rota...</p>
+                </div>
+            </div>
         </div>
     `;
+    atualizarListaViva(numeroManifesto);
 }
 
-async function iniciarTransporte(numeroManifesto) {
-    loadingModal?.show();
-    try {
-        const response = await authFetch(ENDPOINTS.iniciar, {
-            method: 'POST',
-            body: JSON.stringify({ numero_manifesto: numeroManifesto }),
-        });
-        if (response.ok) monitorarCriacaoNFs(numeroManifesto);
-    } catch (err) { loadingModal?.hide(); }
-}
-
-function monitorarCriacaoNFs(numeroManifesto) {
-    const interval = setInterval(async () => {
-        const response = await authFetch(`${ENDPOINTS.status}?numero_manifesto=${numeroManifesto}`);
-        const data = await response.json();
-        if (data.status === 'PROCESSADO') {
-            clearInterval(interval);
-            loadingModal?.hide();
-            renderListaEntregas(numeroManifesto);
-        }
-    }, 2000);
-}
-
-async function renderListaEntregas(numeroManifesto) {
-    const content = document.getElementById('app-content');
+async function atualizarListaViva(numeroManifesto) {
     try {
         const response = await authFetch(`${API_BASE}manifesto/notas/?numero_manifesto=${numeroManifesto}`);
+        if (!response || response.status !== 200) return;
+
         const notas = await response.json();
-        
-        let htmlNotas = '';
+        const container = document.getElementById('lista-notas-container');
+        const contador = document.getElementById('contador-notas');
 
-        notas.forEach(nf => {
-            let cardHtml = "";
-            const chaveValida = nf.chave_acesso && nf.chave_acesso !== "null" ? nf.chave_acesso : "";
-            
-            if (nf.ja_baixada) {
-                cardHtml = `
-                    <div class="card mb-3 shadow-sm border-start border-success border-4 bg-light animate__animated animate__fadeIn">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <h6 class="fw-bold mb-0 text-success">NF ${nf.numero_nota}</h6>
-                                <span class="badge bg-success">CONCLUÍDO</span>
+        if (container && notas.length > 0) {
+            let htmlNotas = '';
+            notas.forEach(nf => {
+                const baixada = nf.ja_baixada;
+                htmlNotas += `
+                    <div class="card mb-3 shadow-sm border-start border-${baixada ? 'success' : 'primary'} border-4 animate__animated animate__fadeInUp">
+                        <div class="card-body p-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <h6 class="fw-bold mb-1">NF ${nf.numero_nota}</h6>
+                                ${baixada ? '<span class="badge bg-success">OK</span>' : ''}
                             </div>
-                            <p class="small text-muted mb-2">${nf.destinatario}</p>
-                            <button class="btn btn-sm btn-outline-success w-100" 
-                                    onclick='abrirModalDetalhes(${JSON.stringify(nf.dados_baixa)})'>
-                                <i class="bi bi-eye"></i> Ver Detalhes da Baixa
-                            </button>
-                        </div>
-                    </div>`;
-            } else {
-                cardHtml = `
-                    <div class="card mb-3 shadow-sm border-start border-primary border-4 animate__animated animate__fadeIn">
-                        <div class="card-body">
-                            <h6 class="fw-bold">NF ${nf.numero_nota}</h6>
                             <p class="small text-muted mb-1">${nf.destinatario}</p>
-                            <p class="small text-muted mb-3"><i class="bi bi-geo-alt"></i> ${nf.endereco_entrega}</p>
-                            <button class="btn btn-sm btn-primary w-100" 
-                                    ${!chaveValida ? 'disabled' : ''} 
-                                    onclick="abrirModalBaixa('${nf.numero_nota}', '${chaveValida}')">
-                                ${chaveValida ? 'Dar Baixa' : 'Chave NF Ausente'}
-                            </button>
+                            <p class="small text-muted mb-2" style="font-size: 0.75rem;"><i class="bi bi-geo-alt"></i> ${nf.endereco_entrega}</p>
+                            ${!baixada ? 
+                                `<button class="btn btn-sm btn-primary w-100" onclick="abrirModalBaixa('${nf.numero_nota}', '${nf.chave_acesso}')">Dar Baixa</button>` :
+                                `<button class="btn btn-sm btn-outline-success w-100" onclick='abrirModalDetalhes(${JSON.stringify(nf.dados_baixa)})'>Ver Detalhes</button>`
+                            }
                         </div>
                     </div>`;
-            }
-            htmlNotas += cardHtml;
-        });
-
-        content.innerHTML = `
-            <div class="pb-5"> 
-                <h5 class="mb-3 fw-bold text-secondary">Notas do Manifesto ${numeroManifesto}</h5>
-                ${htmlNotas}
-                <div style="height: 80px;"></div> 
-            </div>
-        `;
-    } catch (err) { 
-        console.error("Erro ao renderizar lista:", err); 
-    }
-}
-
-// =====================================================
-// CÂMERA E GEOLOCALIZAÇÃO
-// =====================================================
-
-function abrirModalBaixa(numeroNota, chaveAcesso) {
-    const tituloEl = document.getElementById('modal-titulo-nf');
-    const inputChave = document.getElementById('hidden-chave-nf');
-    if (!tituloEl || !inputChave) return;
-
-    tituloEl.innerText = `Ocorrência NF-e ${numeroNota}`;
-    inputChave.value = chaveAcesso;
-    resetarInterfaceCamera();
-
-    const modalBaixa = new bootstrap.Modal(document.getElementById('modalBaixa'));
-    modalBaixa.show();
-}
-
-function resetarInterfaceCamera() {
-    const canvas = document.getElementById('canvas-preview');
-    const placeholder = document.getElementById('placeholder-camera');
-    if (canvas) canvas.style.display = 'none';
-    if (placeholder) placeholder.style.display = 'block';
-}
-
-async function ligarCameraFull() {
-    const overlay = document.getElementById('full-screen-camera');
-    const video = document.getElementById('video-full');
-    
-    const constraints = {
-        video: {
-            facingMode: "environment",
-            // Força a resolução Full HD para leitura nítida de textos
-            width: { min: 1280, ideal: 1920 }, 
-            height: { min: 720, ideal: 1080 },
-            // Tenta focar continuamente (se suportado pelo hardware)
-            focusMode: "continuous" 
-        },
-        audio: false
-    };
-
-    try {
-        streamFull = await navigator.mediaDevices.getUserMedia(constraints);
-        video.srcObject = streamFull;
-        overlay.style.display = 'block'; 
-        
-        // Pequeno truque: força o foco após 1 segundo
-        const track = streamFull.getVideoTracks()[0];
-        const capabilities = track.getCapabilities();
-        if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
-            await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+            });
+            container.innerHTML = htmlNotas;
+            if (contador) contador.innerText = `${notas.length} Notas Processadas`;
         }
-    } catch (err) {
-        // Fallback simples se o HD falhar
-        streamFull = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        video.srcObject = streamFull;
-        overlay.style.display = 'block';
-    }
-}
-
-function capturarFotoFull() {
-    const video = document.getElementById('video-full');
-    const canvas = document.getElementById('canvas-preview');
-    const ctx = canvas.getContext('2d');
-
-    // Sincroniza o tamanho do canvas com a resolução real do vídeo capturado
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    
-    // Desativa a suavização para manter as bordas das letras nítidas
-    ctx.imageSmoothingEnabled = false;
-    
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // Converte para Blob com qualidade alta (0.8 é o sweet spot para HD)
-    canvas.toBlob((blob) => {
-        fotoArquivoParaUpload = blob; // Variável que seu FormData vai usar
-    }, 'image/jpeg', 0.85);
-
-    canvas.style.display = 'block';
-    document.getElementById('placeholder-camera').style.display = 'none';
-    fecharCameraFull();
-}
-
-function fecharCameraFull() {
-    if (streamFull) streamFull.getTracks().forEach(track => track.stop());
-    document.getElementById('full-screen-camera').style.display = 'none';
-}
-
-function getCoords() {
-    return new Promise((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-            (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-            () => resolve(null),
-            { timeout: 5000 }
-        );
-    });
+    } catch (err) { console.error("Erro na atualização viva:", err); }
 }
 
 // =====================================================
-// SALVAR NO BACKEND (MUITO IMPORTANTE)
+// FUNÇÕES DE INTERFACE (MODALS E SEARCH)
 // =====================================================
+
+function renderSearchScreen(message = null, type = 'info') {
+    stopPolling();
+    const content = document.getElementById('app-content');
+    const alertHTML = message ? `<div class="alert alert-${type === 'error' ? 'danger' : 'info'} animate__animated animate__shakeX">${message}</div>` : '';
+
+    content.innerHTML = `
+        <div class="card shadow-sm p-4 mt-3">
+            <h5 class="text-primary mb-3 text-center">Buscar Manifesto</h5>
+            ${alertHTML}
+            <form id="search-form">
+                <input type="number" id="manifesto-number" class="form-control mb-3" placeholder="Número do Manifesto" required />
+                <button class="btn btn-primary w-100">Buscar</button>
+            </form>
+        </div>
+    `;
+    document.getElementById('search-form').addEventListener('submit', handleManifestoSearch);
+}
+
+async function verificarEstadoInicial() {
+    try {
+        const response = await authFetch(`${API_BASE}manifesto/verificar-ativo/`);
+        if (!response || !response.ok) return;
+        const data = await response.json();
+        if (data.tem_manifesto) {
+            renderListaEntregasFinal(data.numero_manifesto);
+        } else {
+            renderSearchScreen();
+        }
+    } catch (err) { renderSearchScreen(); }
+}
+
+async function renderListaEntregasFinal(numeroManifesto) {
+    // Mesma lógica do renderEstruturaLista, mas usada para carregamento inicial (Estado Ativo)
+    renderEstruturaLista(numeroManifesto);
+}
+
+// =====================================================
+// BAIXAS, CÂMERA E GEOLOCALIZAÇÃO
+// =====================================================
+
 async function salvarRegistro() {
     const cod = document.getElementById('select-ocorrencia').value;
     const chaveNF = document.getElementById('hidden-chave-nf').value;
@@ -343,7 +238,6 @@ async function salvarRegistro() {
     }
 
     loadingModal?.show();
-
     const formData = new FormData();
     formData.append('ocorrencia_codigo', cod);
     formData.append('chave_acesso', chaveNF);
@@ -356,16 +250,14 @@ async function salvarRegistro() {
     }
 
     if (temFoto) {
-        const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.8));
+        const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.85));
         formData.append('foto', blob, `${chaveNF}.jpg`);
     }
 
     try {
-        // Usamos authFetch com headers vazios para suportar FormData corretamente
         const response = await authFetch(`${API_BASE}manifesto/registrar-baixa/`, {
             method: 'POST',
-            body: formData,
-            headers: {} 
+            body: formData
         });
 
         if (response.ok) {
@@ -373,48 +265,94 @@ async function salvarRegistro() {
             location.reload();
         } else {
             const data = await response.json();
-            alert("Erro: " + (data.erro || data.detail || "Falha no registro"));
+            alert("Erro: " + (data.erro || "Falha no registro"));
         }
-    } catch (err) {
-        alert("Erro de conexão.");
-    } finally {
-        loadingModal?.hide();
-    }
+    } catch (err) { alert("Erro de conexão."); }
+    finally { loadingModal?.hide(); }
+}
+
+function handleCameraNativa(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const canvas = document.getElementById('canvas-preview');
+    const ctx = canvas.getContext('2d');
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+            const larguraDesejada = 1600; 
+            const escala = larguraDesejada / img.width;
+            canvas.width = larguraDesejada;
+            canvas.height = img.height * escala;
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            canvas.style.display = 'block';
+            document.getElementById('placeholder-camera').style.display = 'none';
+            document.getElementById('label-camera').style.display = 'none';
+            document.getElementById('btn-nova-foto').style.display = 'block';
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function abrirModalBaixa(numeroNota, chaveAcesso) {
+    const tituloEl = document.getElementById('modal-titulo-nf');
+    const inputChave = document.getElementById('hidden-chave-nf');
+    if (!tituloEl || !inputChave) return;
+
+    tituloEl.innerText = `Ocorrência NF-e ${numeroNota}`;
+    inputChave.value = chaveAcesso;
+    
+    // Reset da Câmera
+    const canvas = document.getElementById('canvas-preview');
+    if (canvas) canvas.style.display = 'none';
+    document.getElementById('placeholder-camera').style.display = 'block';
+    document.getElementById('label-camera').style.display = 'block';
+    document.getElementById('btn-nova-foto').style.display = 'none';
+
+    const mBaixa = new bootstrap.Modal(document.getElementById('modalBaixa'));
+    mBaixa.show();
 }
 
 // =====================================================
-// VISUALIZAÇÃO DE DETALHES
+// UTILITÁRIOS FINAIS
 // =====================================================
+
+function stopPolling() {
+    if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+}
+
+function initModals() {
+    const loadingEl = document.getElementById('loadingModal');
+    if (loadingEl) loadingModal = new bootstrap.Modal(loadingEl, { backdrop: 'static', keyboard: false });
+}
+
+function getCoords() {
+    return new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+            () => resolve(null),
+            { timeout: 5000, enableHighAccuracy: true }
+        );
+    });
+}
+
 function abrirModalDetalhes(dados) {
     const container = document.getElementById('modal-detalhes-body');
     if (!container) return;
-
     container.innerHTML = `
-        <div class="mb-3 border-bottom pb-2">
-            <small class="text-muted d-block">Status</small>
-            <span class="badge ${dados.tipo === 'ENTREGA' ? 'bg-success' : 'bg-warning'} fs-6">
-                ${dados.tipo} - ${dados.ocorrencia}
-            </span>
-        </div>
         <div class="mb-2 small"><strong>Data:</strong> ${dados.data}</div>
         <div class="mb-3 small"><strong>Recebedor:</strong> ${dados.recebedor || 'Não informado'}</div>
-        ${dados.foto_url ? `<img src="${dados.foto_url}" class="img-fluid rounded border shadow-sm w-100 mb-3" style="max-height: 250px; object-fit: cover;">` : ''}
-        ${dados.lat && dados.lng ? `<a href="https://www.google.com/maps?q=${dados.lat},${dados.lng}" target="_blank" class="btn btn-sm btn-outline-primary w-100"><i class="bi bi-geo-alt"></i> Ver Mapa</a>` : ''}
+        ${dados.foto_url ? `<img src="${dados.foto_url}" class="img-fluid rounded border shadow-sm w-100 mb-3">` : ''}
     `;
-
-    const modal = new bootstrap.Modal(document.getElementById('modalDetalhes'));
-    modal.show();
+    new bootstrap.Modal(document.getElementById('modalDetalhes')).show();
 }
 
 async function atualizarDadosHeader() {
     try {
-        const res = await authFetch(`${AUTH_BASE}perfil/`); // Sua rota de perfil
+        const res = await authFetch(`${AUTH_BASE}perfil/`);
         const data = await res.json();
-        
-        if (data && data.nome) {
-            document.getElementById('header-nome-motorista').textContent = data.nome.split(' ')[0]; // Pega o primeiro nome
-        }
-    } catch (e) {
-        console.error("Não foi possível atualizar o nome no header");
-    }
+        if (data && data.nome) document.getElementById('header-nome-motorista').textContent = data.nome.split(' ')[0];
+    } catch (e) { console.error("Erro no header"); }
 }

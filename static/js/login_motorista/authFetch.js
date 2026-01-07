@@ -42,19 +42,20 @@ async function authFetch(url, options = {}) {
         let response = await fetch(url, options);
 
         if (response.status === 401) {
-            console.warn("Access Token expirado. Tentando renovação...");
-            const refreshed = await refreshToken();
-            
-            if (refreshed) {
-                // Tenta novamente a requisição original com o novo token
-                access = localStorage.getItem('accessToken');
-                options.headers.Authorization = `Bearer ${access}`;
-                return await fetch(url, options);
-            } else {
-                logout();
-                return null;
-            }
-        }
+    console.warn("Access Token expirado. Tentando renovação...");
+    const refreshed = await refreshToken();
+    
+    if (refreshed) {
+        access = localStorage.getItem('accessToken');
+        options.headers.Authorization = `Bearer {access}`;
+        return await fetch(url, options);
+    } else {
+        // Se falhar o refresh durante a busca de notas, 
+        // evite o logout imediato para não quebrar o modal.
+        console.error("Não foi possível renovar o token.");
+        return response; // Retorna o 401 para o manifesto.js tratar
+    }
+}
         return response;
     } catch (err) {
         return null;
