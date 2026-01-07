@@ -4,50 +4,32 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
 from manifesto.models import Manifesto, ManifestoBuscaLog
-from manifesto.tasks import processar_notas_fiscais_task
+from manifesto.tasks import buscar_manifesto_completo_task
 
 class IniciarTransporteView(APIView):
-    permission_classes = [IsAuthenticated]
-
     def post(self, request):
         motorista = request.user.motorista_perfil
         numero = request.data.get('numero_manifesto')
 
-        # 1. VALIDAÇÃO DE REGRA DE NEGÓCIO
-        # Verifica se o motorista já tem um transporte ativo
-        if Manifesto.objects.filter(motorista=motorista, status='EM_TRANSPORTE').exists():
-            return Response({
-                'erro': 'Você já possui um manifesto em transporte aberto. Finalize-o antes de iniciar outro.'
-            }, status=400)
+        # 1. Busca o log existente da busca prévia
+        log = ManifestoBuscaLog.objects.filter(numero_manifesto=numero, motorista=motorista).first()
+        
+        if not log:
+            return Response({'erro': 'Faça a busca do manifesto primeiro.'}, status=404)
 
-        # 2. BUSCA O LOG COM O PAYLOAD
-        log = ManifestoBuscaLog.objects.filter(
-            numero_manifesto=numero, 
-            motorista=motorista
-        ).first()
+        with transaction.atomic():
+            # 2. Cria o registro oficial do manifesto
+            manifesto = Manifesto.objects.create(
+                numero_manifesto=numero,
+                motorista=motorista,
+                status='EM_TRANSPORTE'
+            )
+            
+            # 3. Avisa o log que estamos processando
+            log.status = 'AGUARDANDO'
+            log.save()
 
-        if not log or not log.payload:
-            return Response({'erro': 'Dados do manifesto não encontrados no log de busca.'}, status=404)
+            # 4. Chama a Task unificada passando os dois IDs
+            buscar_manifesto_completo_task.delay(log.id, manifesto.id)
 
-        try:
-            with transaction.atomic():
-                # 3. CRIAÇÃO DO MANIFESTO
-                # Usamos apenas create para garantir que estamos criando um novo registro oficial
-                manifesto = Manifesto.objects.create(
-                    numero_manifesto=numero,
-                    motorista=motorista,
-                    status='EM_TRANSPORTE'
-                )
-                
-                # 4. ATUALIZA STATUS DO LOG PARA O FRONTEND SABER QUE ESTÁ PROCESSANDO
-                log.status = 'AGUARDANDO' 
-                log.save(update_fields=['status'])
-
-                # 5. DISPARA TASK PARA CRIAR AS NOTAS FISCAIS
-                processar_notas_fiscais_task.delay(manifesto.id, log.id)
-
-            return Response({'status': 'sucesso', 'manifesto_id': manifesto.id})
-
-        except Exception as e:
-            # Captura erros de banco e retorna como JSON, evitando o erro 500 HTML
-            return Response({'erro': f'Erro interno: {str(e)}'}, status=500)
+        return Response({'status': 'sucesso', 'manifesto_id': manifesto.id})

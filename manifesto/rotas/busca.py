@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from manifesto.models import Manifesto, ManifestoBuscaLog
-from manifesto.tasks import  buscar_manifesto_task
+from manifesto.tasks import buscar_manifesto_completo_task
 import requests
 import json
 
@@ -30,6 +30,6 @@ class BuscarManifestoView(APIView):
             }
         )
         print( "Disparando task de busca de manifesto para preview..." )
-        buscar_manifesto_task.delay(log.id)
+        buscar_manifesto_completo_task.delay(log.id)
 
         return Response({'status': 'AGUARDANDO'}, status=202)

@@ -5,6 +5,7 @@ from .models import (
     Manifesto, NotaFiscal, Ocorrencia, BaixaNF, 
     HistoricoOcorrencia, ManifestoBuscaLog
 )
+from manifesto.tasks import enviar_baixa_esl_task
 
 @admin.register(Manifesto)
 class ManifestoAdmin(ModelAdmin):
@@ -67,8 +68,7 @@ class BaixaNFAdmin(ModelAdmin):
     ver_mapa.short_description = "Mapa"
 
     def forcar_reintegracao(self, request, queryset):
-        from .tasks import task_preparar_integracao_esl
         for baixa in queryset:
-            task_preparar_integracao_esl.delay(baixa.id)
+            enviar_baixa_esl_task.delay(baixa.id)
         self.message_user(request, "Integração disparada para os itens selecionados.")
     forcar_reintegracao.short_description = "Re-enviar para TMS ESL"

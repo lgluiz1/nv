@@ -1,13 +1,13 @@
 # manifestos/views.py
 from rest_framework.views import APIView
-from .tasks import processa_manifesto_dataexport
+from .tasks import buscar_manifesto_task
 from rest_framework import views, status, generics
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from .models import Manifesto, NotaFiscal, Ocorrencia, BaixaNF, ManifestoBuscaLog
-from .tasks import processa_manifesto_dataexport, envia_baixa_para_tms
+from .tasks import buscar_manifesto_task, envia_baixa_para_tms
 from usuarios.models import Motorista
 from .serializers import (
     ManifestoBuscaSerializer, ManifestoSerializer, 
@@ -38,7 +38,7 @@ class BuscarManifestoView(APIView):
             )
 
         # 🚀 Dispara a task REAL que busca e processa no TMS
-        processa_manifesto_dataexport.delay(
+        buscar_manifesto_task.delay(
             motorista_cpf=motorista.cpf,
             numero_manifesto=numero
         )

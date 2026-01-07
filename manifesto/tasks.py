@@ -8,25 +8,20 @@ from django.conf import settings
 from usuarios.models import Motorista
 from manifesto.models import Manifesto, NotaFiscal, ManifestoBuscaLog , BaixaNF
 
+import time # Necessário para respeitar os 2 segundos
+
 
 logger = logging.getLogger(__name__)
 # Configurações centralizadas
 MAPA_JSON = {
-    'CHAVE_ACESSO': 'mft_fis_fit_fis_ioe_key',
-    'NUMERO_NF': 'mft_fis_fit_fis_ioe_number',
-    'NUMERO_MANIFESTO_EVT': 'sequence_code',
-    'CPF_MOTORISTA_TMS': 'mft_mdr_iil_document',
-    'NOME_CLIENTE': 'mft_fis_fit_fis_ioe_rpt_name', 
-    'ENDERECO_LOGRADOURO': 'mft_fis_fit_fis_ioe_rpt_mds_line_1', 
-    'ENDERECO_NUMERO': 'mft_fis_fit_fis_ioe_rpt_mds_number',
-    'ENDERECO_BAIRRO': 'mft_fis_fit_fis_ioe_rpt_mds_neighborhood',
-    'ENDERECO_CEP': 'mft_fis_fit_fis_ioe_rpt_mds_postal_code',
+    'CPF_MOTORISTA_TMS': 'mft_mft_driver_document_number',
+    # Adicione outros mapeamentos conforme necessário
 }
 
-def requisicao_tms(numero_manifesto):
+def validar_motorista_request(numero_manifesto):
+    """Retorna o CPF do motorista vinculado ao manifesto no Endpoint 1"""
     TOKEN = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
     URL = f"https://quickdelivery.eslcloud.com.br/api/analytics/reports/2972/data"
-    
     payload = {
         "search": {
             "manifests": {
@@ -34,73 +29,240 @@ def requisicao_tms(numero_manifesto):
                 "service_date": "2024-01-01 - 2050-12-31"
             }
         },
-        "page": "1", "per": "500"
+        "page": "1", "per": "50"
+    }
+    response = requests.get(URL, headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}, data=json.dumps(payload), timeout=20)
+    response.raise_for_status()
+    dados = response.json()
+    if dados and len(dados) > 0:
+        # Pega o documento do primeiro item da lista
+        return str(dados[0].get('mft_mdr_iil_document', '')).strip()
+    return None
+
+def capturar_notas_unicas(manifesto_id):
+    """Percorre a paginação da ESL e filtra as chaves únicas de NF-e"""
+    TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
+    url = f"https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    
+    notas_unicas = {}
+    next_id = None
+
+    while True:
+        params = {"manifest_id": manifesto_id, "per": 50}
+        if next_id:
+            params["after_id"] = next_id
+
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            response.raise_for_status()
+            data_json = response.json()
+            
+            records = data_json.get('data', [])
+            if not records:
+                break
+
+            for item in records:
+                invoice = item.get('invoice', {})
+                chave = invoice.get('key')
+                if chave:
+                    # Armazena apenas uma entrada por chave de acesso
+                    notas_unicas[chave] = {
+                        'numero': invoice.get('number'),
+                        'chave': chave
+                    }
+
+            # Lógica de Paginação baseada no seu JSON
+            paging = data_json.get('paging', {})
+            next_id = paging.get('next_id')
+            
+            if not next_id or next_id >= paging.get('last_id', 0):
+                # Se não houver next_id ou se já chegamos no last_id, encerra o loop
+                break
+                
+            time.sleep(2) # Respeita o limite da API da transportadora
+
+        except Exception as e:
+            logger.error(f"Erro ao paginar notas: {e}")
+            break
+
+    return list(notas_unicas.values())
+
+def enriquecer_dados_api(chave_nfe, numero_nfe):
+    """Busca detalhes (Nome, Endereço) de uma nota específica"""
+    TOKEN = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
+    URL = f"https://quickdelivery.eslcloud.com.br/api/analytics/reports/9873/data"
+    
+    payload = {
+        "search": {
+            "invoices": {
+                "number": int(numero_nfe),
+                "issue_date": "2024-01-01 - 2050-12-31" 
+            }
+        },
+        "page": "1", "per": "100"
     }
     
-    response = requests.get(URL, headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}, data=json.dumps(payload), timeout=40)
-    response.raise_for_status()
-    return response.json()
+    try:
+        response = requests.get(URL, headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}, data=json.dumps(payload), timeout=30)
+        if response.status_code == 200:
+            dados = response.json()
+            for nf in dados:
+                if nf.get('key') == chave_nfe:
+                    return nf
+    except Exception as e:
+        logger.error(f"Erro na API de enriquecimento para nota {numero_nfe}: {e}")
+    return None
 
-@shared_task(bind=True)
-def buscar_manifesto_task(self, log_id):
+# =====================================================
+# TASK PRINCIPAL DO CELERY
+# =====================================================
+
+@shared_task(bind=True, max_retries=3)
+def buscar_manifesto_completo_task(self, log_id):
+    from manifesto.models import Manifesto, NotaFiscal, ManifestoBuscaLog
+    
     try:
         log = ManifestoBuscaLog.objects.select_related('motorista').get(id=log_id)
-        dados = requisicao_tms(log.numero_manifesto)
+        numero_visual = log.numero_manifesto
+        motorista = log.motorista
+        token_geral = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
+        headers_geral = {"Content-Type": "application/json", "Authorization": f"Bearer {token_geral}"}
 
-        if not dados:
-            log.status, log.mensagem_erro = 'ERRO', 'Manifesto não encontrado'
-            log.save()
-            return
-
-        # Validação de CPF (Jonatan Roberto Lopes de Faria no seu exemplo)
-        cpf_tms = str(dados[0].get(MAPA_JSON['CPF_MOTORISTA_TMS'], '')).strip()
-        motorista_cpf = str(log.motorista.cpf).strip().replace('.', '').replace('-', '')
-
-        if cpf_tms != motorista_cpf:
-            log.status = 'ERRO'
-            log.mensagem_erro = f"Manifesto pertence ao documento {cpf_tms}"
-            log.save()
-            return
-
-        # Sucesso
-        log.payload = dados
-        log.status = 'PROCESSADO'
-        log.mensagem_erro = None
-        log.save()
-
-    except Exception as e:
-        log.status, log.mensagem_erro = 'ERRO', str(e)
-        log.save()
-
-@shared_task
-def processar_notas_fiscais_task(manifesto_id, log_id):
-    try:
-        manifesto = Manifesto.objects.get(id=manifesto_id)
-        log = ManifestoBuscaLog.objects.get(id=log_id)
+        # --- ETAPA 1: VALIDAR MOTORISTA E PEGAR ID INTERNO ---
+        url_valida = "https://quickdelivery.eslcloud.com.br/api/analytics/reports/2972/data"
+        payload_busca = {
+            "search": {
+                "manifests": {
+                    "sequence_code": int(numero_visual),
+                    "service_date": "2024-01-01 - 2050-12-31"
+                }
+            },
+            "page": "1", "per": "10"
+        }
         
-        with transaction.atomic():
-            for item in log.payload:
-                chave = item.get('mft_fis_fit_fis_ioe_key')
-                # Model NotaFiscal garante unicidade por (manifesto, chave_acesso)
-                NotaFiscal.objects.get_or_create(
-                    manifesto=manifesto,
-                    chave_acesso=chave,
-                    defaults={
-                        'numero_nota': item.get('mft_fis_fit_fis_ioe_number'),
-                        'destinatario': item.get('mft_fis_fit_fis_ioe_rpt_name'),
-                        'endereco_entrega': f"{item.get('mft_fis_fit_fis_ioe_rpt_mds_line_1')}, {item.get('mft_fis_fit_fis_ioe_rpt_mds_number')}",
-                        'status': 'PENDENTE'
-                    }
-                )
-            
-            # Muda status do LOG para PROCESSADO para o polling do JS parar e mostrar a lista
-            log.status = 'PROCESSADO'
-            log.save(update_fields=['status'])
-            
-    except Exception as e:
-        log.status, log.mensagem_erro = 'ERRO', str(e)
+        res_valida = requests.get(url_valida, headers=headers_geral, data=json.dumps(payload_busca), timeout=30)
+        dados_mft = res_valida.json()
+        
+        if not dados_mft:
+            log.status, log.mensagem_erro = 'ERRO', "Manifesto não encontrado."
+            log.save(); return
+
+        # Validação de CPF
+        cpf_tms = str(dados_mft[0].get('mft_mdr_iil_document', '')).strip()
+        if cpf_tms != str(motorista.cpf).replace('.','').replace('-',''):
+            log.status, log.mensagem_erro = 'ERRO', "Manifesto não pertence ao seu CPF."
+            log.save(); return
+
+        # Criar Manifesto Local
+        manifesto_obj, _ = Manifesto.objects.get_or_create(
+            numero_manifesto=numero_visual,
+            defaults={'motorista': motorista, 'status': 'EM_TRANSPORTE'}
+        )
+        
+        # ID Interno para as ocorrências (importante para a Etapa 2)
+        id_interno_esl = dados_mft[0].get('id') or numero_visual
+        log.status = 'ENRIQUECENDO'
         log.save()
 
+        # --- ETAPA 2: CAPTURAR LISTA DE NOTAS (LOGICA DE PAGINAÇÃO POR CURSOR) ---
+        # Implementando exatamente a lógica que você validou
+        token_notas = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
+        url_notas = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
+        
+        params_notas = {"manifest_id": str(id_interno_esl), "per": 20}
+        start_cursor = None
+        notas_unicas_dict = {} # Usamos dict para guardar a key e o number para a etapa 3
+
+        logger.info(f"🚀 Iniciando busca de notas para o Manifesto {numero_visual} (ID: {id_interno_esl})")
+
+        while True:
+            if start_cursor:
+                params_notas["start"] = start_cursor
+            else:
+                params_notas.pop("start", None)
+
+            res_n = requests.get(url_notas, headers={"Authorization": f"Bearer {token_notas}"}, params=params_notas, timeout=30)
+            
+            if res_n.status_code != 200:
+                logger.error(f"❌ Erro na paginação: {res_n.status_code}")
+                break
+
+            data_n = res_n.json()
+            registros = data_n.get("data", [])
+            paging = data_n.get("paging", {})
+
+            logger.info(f"📦 Página capturada: {len(registros)} ocorrências encontradas.")
+
+            for item in registros:
+                invoice = item.get("invoice")
+                if invoice and invoice.get("key"):
+                    # Armazena a chave e o número para enriquecer na etapa 3
+                    notas_unicas_dict[invoice["key"]] = invoice["number"]
+
+            logger.info(f"🧾 Total de notas únicas até agora: {len(notas_unicas_dict)}")
+
+            # Checa se há próxima página
+            if paging.get("next_id") is None:
+                logger.info("✅ Fim da paginação de notas.")
+                break
+
+            start_cursor = paging["next_id"]
+            time.sleep(2.3) # Delay de segurança exigido pela ESL
+
+        # --- ETAPA 3: ENRIQUECIMENTO NOTA A NOTA ---
+        total_processadas = 0
+        for chave, numero in notas_unicas_dict.items():
+            try:
+                time.sleep(2.1) # Throttling por nota
+                detalhes = buscar_detalhes_esl_interno(chave, numero, token_geral)
+                
+                if detalhes:
+                    with transaction.atomic():
+                        NotaFiscal.objects.update_or_create(
+                            manifesto=manifesto_obj,
+                            chave_acesso=chave,
+                            defaults={
+                                'numero_nota': str(numero),
+                                'destinatario': detalhes.get('ioe_rpt_name', 'Não informado'),
+                                'endereco_entrega': f"{detalhes.get('ioe_rpt_mds_line_1', '')} {detalhes.get('ioe_rpt_mds_number') or ''}",
+                                'status': 'PENDENTE'
+                            }
+                        )
+                    total_processadas += 1
+                    logger.info(f"✅ NF {numero} registrada ({total_processadas}/{len(notas_unicas_dict)})")
+            except Exception as e:
+                logger.warning(f"⚠️ Erro ao enriquecer nota {numero}: {e}")
+                continue
+
+        log.status = 'PROCESSADO'
+        log.save()
+        return f"Manifesto {numero_visual} finalizado com {total_processadas} notas."
+
+    except Exception as e:
+        logger.error(f"🔴 Erro crítico na task: {str(e)}")
+        log.status, log.mensagem_erro = 'ERRO', str(e)
+        log.save()
+        raise self.retry(exc=e, countdown=60)
+
+def buscar_detalhes_esl_interno(chave, numero, token):
+    """Auxiliar para buscar endereço no Endpoint 3"""
+    url = "https://quickdelivery.eslcloud.com.br/api/analytics/reports/9873/data"
+    payload = {
+        "search": {
+            "invoices": {
+                "issue_date": "2024-01-01 - 2050-12-31",
+                "number": int(numero)
+            }
+        }
+    }
+    try:
+        r = requests.get(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, data=json.dumps(payload), timeout=30)
+        if r.status_code == 200:
+            for nf in r.json():
+                if nf.get('key') == chave: return nf
+    except: pass
+    return None
 
 
 
@@ -119,7 +281,7 @@ def enviar_baixa_esl_task(self, baixa_id):
     
     TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
     URL_ESL = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
-    BASE_NGROK = "https://1bdf6f7e1548.ngrok-free.app" # Substitua pelo seu domínio fixo se tiver
+    BASE_NGROK = "https://390ee1d25816.ngrok-free.app" # Substitua pelo seu domínio fixo se tiver
     
     try:
         # 1. Busca os dados com as relações (evita múltiplas consultas ao banco)
