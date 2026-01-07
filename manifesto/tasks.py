@@ -281,7 +281,7 @@ def enviar_baixa_esl_task(self, baixa_id):
     
     TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
     URL_ESL = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
-    BASE_NGROK = "https://390ee1d25816.ngrok-free.app" # Substitua pelo seu domínio fixo se tiver
+    BASE_NGROK = "https://entregas.luizgustavo.tech" # Substitua pelo seu domínio fixo se tiver
     
     try:
         # 1. Busca os dados com as relações (evita múltiplas consultas ao banco)
