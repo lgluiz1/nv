@@ -226,50 +226,132 @@ async function renderListaEntregasFinal(numeroManifesto) {
 // BAIXAS, CÂMERA E GEOLOCALIZAÇÃO
 // =====================================================
 
+// Certifique-se de que o statusModal foi inicializado no topo do seu arquivo JS
+const statusModal = new bootstrap.Modal(document.getElementById('statusModal'));
+
 async function salvarRegistro() {
-    const cod = document.getElementById('select-ocorrencia').value;
-    const chaveNF = document.getElementById('hidden-chave-nf').value;
+    // 1. Coleta de elementos do DOM
+    const selectOcorrencia = document.getElementById('select-ocorrencia');
+    const inputRecebedor = document.getElementById('input-recebedor');
+    const inputChave = document.getElementById('hidden-chave-nf');
     const canvas = document.getElementById('canvas-preview');
+    
+    const cod = selectOcorrencia.value;
+    const chaveNF = inputChave.value;
     const temFoto = (canvas.style.display === 'block');
 
+    // 2. Validação de Foto Obrigatória (Códigos 1 e 2 geralmente são 'Entregue')
     if ((cod === "1" || cod === "2") && !temFoto) {
-        alert("A foto é obrigatória para este código!");
+        alert("A foto é obrigatória para este código de ocorrência!");
         return;
     }
 
-    loadingModal?.show();
+    // 3. Interface: Fecha modal de preenchimento e abre modal de progresso
+    const modalBaixaEl = document.getElementById('modalBaixa');
+    const modalBaixaInstance = bootstrap.Modal.getInstance(modalBaixaEl);
+    if (modalBaixaInstance) modalBaixaInstance.hide();
+
+    // Reseta o Modal de Status para o estado de carregamento
+    atualizarStatusUI('loading', 'Enviando Registro...', 'Aguarde, estamos salvando os dados e a foto.');
+    statusModal.show();
+
+    // 4. Preparação dos Dados (FormData)
     const formData = new FormData();
     formData.append('ocorrencia_codigo', cod);
     formData.append('chave_acesso', chaveNF);
-    formData.append('recebedor', document.getElementById('input-recebedor').value || '');
+    formData.append('recebedor', inputRecebedor.value || '');
 
-    const coords = await getCoords();
-    if (coords) {
-        formData.append('latitude', coords.lat);
-        formData.append('longitude', coords.lon);
+    // 5. Captura de Coordenadas GPS
+    try {
+        const coords = await getCoords(); // Função que você já possui
+        if (coords) {
+            formData.append('latitude', coords.lat);
+            formData.append('longitude', coords.lon);
+        }
+    } catch (gpsErr) {
+        console.warn("Não foi possível obter GPS:", gpsErr);
+        // Prossegue mesmo sem GPS para não travar a entrega
     }
 
+    // 6. Conversão do Canvas para Imagem (Blob)
     if (temFoto) {
         const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.85));
         formData.append('foto', blob, `${chaveNF}.jpg`);
     }
 
+    // 7. Envio para o Backend
     try {
         const response = await authFetch(`${API_BASE}manifesto/registrar-baixa/`, {
             method: 'POST',
             body: formData
         });
 
+        const data = await response.json();
+
         if (response.ok) {
-            alert("Baixa realizada com sucesso!");
-            location.reload();
+            // SUCESSO TOTAL: Mostra ícone verde e recarrega após 2 segundos
+            atualizarStatusUI('success', '✅ Registro Cadastrado!', 'A baixa foi realizada com sucesso no sistema.');
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
+
         } else {
-            const data = await response.json();
-            alert("Erro: " + (data.erro || "Falha no registro"));
+            // ERRO RETORNADO PELO SERVIDOR (Ex: Erro de integração com ESL)
+            if (data.status_integracao === 'erro_tms') {
+                atualizarStatusUI('warning', '⚠️ Salvo com Alerta', `O canhoto foi salvo no App, mas houve um erro na ESL: ${data.erro}`);
+            } else {
+                atualizarStatusUI('error', '❌ Falha no Registro', data.erro || 'Erro interno no servidor.');
+            }
+            configurarBotaoWhats(data.erro, chaveNF);
         }
-    } catch (err) { alert("Erro de conexão."); }
-    finally { loadingModal?.hide(); }
+
+    } catch (err) {
+        // ERRO DE REDE (Internet do motorista caiu, VPS offline)
+        atualizarStatusUI('error', '📡 Erro de Conexão', 'Não foi possível falar com o servidor. Verifique seu sinal de internet.');
+        configurarBotaoWhats("Erro de conexão/rede no momento da baixa", chaveNF);
+    }
 }
+
+/**
+ * Função Auxiliar para atualizar a interface do Modal de Status
+ */
+function atualizarStatusUI(tipo, titulo, mensagem) {
+    const iconDiv = document.getElementById('status-icon');
+    const titleEl = document.getElementById('status-title');
+    const msgEl = document.getElementById('status-message');
+    const footerDiv = document.getElementById('status-footer');
+
+    titleEl.innerText = titulo;
+    msgEl.innerText = mensagem;
+
+    if (tipo === 'loading') {
+        iconDiv.innerHTML = '<div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>';
+        footerDiv.style.display = 'none';
+    } else {
+        footerDiv.style.display = 'block';
+        if (tipo === 'success') iconDiv.innerHTML = '<span style="font-size: 5rem;">✅</span>';
+        if (tipo === 'error') iconDiv.innerHTML = '<span style="font-size: 5rem;">❌</span>';
+        if (tipo === 'warning') iconDiv.innerHTML = '<span style="font-size: 5rem;">⚠️</span>';
+    }
+}
+
+/**
+ * Configura o botão de suporte do WhatsApp caso ocorra um erro
+ */
+function configurarBotaoWhats(erroMsg, chave) {
+    const btn = document.getElementById('btn-reportar');
+    if (!btn) return;
+    
+    btn.style.display = 'block';
+    btn.onclick = () => {
+        const msg = `Olá! Tive um problema ao registrar a baixa.\nErro: ${erroMsg}\nChave: ${chave}`;
+        const url = `https://wa.me/55SEUNUMERO?text=${encodeURIComponent(msg)}`;
+        window.open(url, '_blank');
+    };
+}
+
+
+//// FUNÇÕES AUXILIARES DE CÂMERA NATIVA E MODAIS ////
 
 function handleCameraNativa(event) {
     const file = event.target.files[0];

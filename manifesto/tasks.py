@@ -220,9 +220,9 @@ def buscar_manifesto_completo_task(self, log_id):
                 if detalhes:
                     with transaction.atomic():
                         NotaFiscal.objects.update_or_create(
-                            manifesto=manifesto_obj,
                             chave_acesso=chave,
                             defaults={
+                                'manifesto': manifesto_obj,
                                 'numero_nota': str(numero),
                                 'destinatario': detalhes.get('ioe_rpt_name', 'Não informado'),
                                 'endereco_entrega': f"{detalhes.get('ioe_rpt_mds_line_1', '')} {detalhes.get('ioe_rpt_mds_number') or ''}",
@@ -281,7 +281,7 @@ def enviar_baixa_esl_task(self, baixa_id):
     
     TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
     URL_ESL = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
-    BASE_NGROK = "https://entregas.luizgustavo.tech" # Substitua pelo seu domínio fixo se tiver
+    BASE_NGROK = "https://d7dbeee3bc3a.ngrok-free.app" # Substitua pelo seu domínio fixo se tiver
     
     try:
         # 1. Busca os dados com as relações (evita múltiplas consultas ao banco)
@@ -331,6 +331,7 @@ def enviar_baixa_esl_task(self, baixa_id):
         baixa.processado_tms = True
         baixa.data_integracao = timezone.now()
         baixa.log_erro_tms = "Sucesso: Integrado com ESL"
+        baixa.integrado_tms = True
         baixa.save()
 
     except BaixaNF.DoesNotExist:
@@ -343,6 +344,7 @@ def enviar_baixa_esl_task(self, baixa_id):
             msg_erro = f"Erro {exc.response.status_code}: {exc.response.text}"
         
         baixa.log_erro_tms = msg_erro[:500]
+        baixa.integrado_tms = False
         baixa.save()
         
         # Tenta novamente em 2 minutos (máximo 5 vezes)

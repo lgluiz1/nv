@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from .models import Manifesto, NotaFiscal, Ocorrencia, BaixaNF, ManifestoBuscaLog
 from .tasks import buscar_manifesto_task, envia_baixa_para_tms
+from django.db import transaction
 from usuarios.models import Motorista
 from .serializers import (
     ManifestoBuscaSerializer, ManifestoSerializer, 
@@ -52,58 +53,49 @@ class BuscarManifestoView(APIView):
         )
 
 class BaixaNFView(views.APIView):
-    """
-    POST: Registra a baixa (entrega ou ocorrência) de uma Nota Fiscal.
-    """
     permission_classes = [IsAuthenticated]
 
-    # Rota POST: /api/nf/<int:pk>/baixa/
     def post(self, request, pk):
-        # O pk é o ID interno da NotaFiscal no nosso BD
+        # 1. Busca pela PK conforme o roteamento atual
         try:
-            nf = NotaFiscal.objects.get(pk=pk, manifesto__motorista=request.user.motorista_perfil, status='PENDENTE')
+            # DICA: Se você mudar o front para enviar a CHAVE, troque pk=pk por chave_acesso=pk
+            nf = NotaFiscal.objects.get(pk=pk, status='PENDENTE')
         except NotaFiscal.DoesNotExist:
-            return Response({'mensagem': 'Nota Fiscal não encontrada, não pertence ao seu manifesto ou já foi baixada.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'erro': 'Nota Fiscal não encontrada ou já baixada.'}, status=status.HTTP_404_NOT_FOUND)
 
         serializer = BaixaNFCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         
-        ocorrencia_obj = None
-        codigo_ocorrencia = data.get('codigo_ocorrencia')
-
-        # Lógica de Ocorrência (Validação do código TMS)
+        # 2. Validação da Ocorrência
         try:
-            ocorrencia_obj = get_object_or_404(Ocorrencia, codigo_tms=codigo_ocorrencia)
-        except:
-             return Response({'mensagem': 'Código de ocorrência inválido ou inexistente.'}, status=status.HTTP_400_BAD_REQUEST)
+            ocorrencia_obj = Ocorrencia.objects.get(codigo_tms=data.get('codigo_ocorrencia'))
+        except Ocorrencia.DoesNotExist:
+             return Response({'erro': 'Código de ocorrência inválido.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Atualiza status da NF
-        nf.status = 'OCORRENCIA' if ocorrencia_obj.tipo == 'PROBLEMA' else 'BAIXADA'
-        
-        # Salva o registro de baixa no DB
-        baixa = BaixaNF.objects.create(
-            nota_fiscal=nf,
-            tipo=data['tipo'],
-            comprovante_foto=data.get('comprovante_foto'),
-            ocorrencia=ocorrencia_obj,
-            observacao=data.get('observacao')
-        )
-        nf.save()
-        
-        # Dispara a Task Celery para comunicação com o TMS
-        foto_url = baixa.comprovante_foto.url if baixa.comprovante_foto else None
-        
-        envia_baixa_para_tms.delay(
-            chave_acesso_nf=nf.chave_acesso,
-            tipo_baixa=data['tipo'],
-            codigo_ocorrencia=codigo_ocorrencia,
-            foto_url=foto_url
-        )
-        
-        return Response({'mensagem': 'Baixa registrada. Enviando dados ao TMS de forma assíncrona.'}, status=status.HTTP_202_ACCEPTED)
+        # 3. Salva no Banco local (O que importa para o motorista)
+        with transaction.atomic():
+            nf.status = 'OCORRENCIA' if ocorrencia_obj.tipo == 'PROBLEMA' else 'BAIXADA'
+            nf.save()
+            
+            baixa = BaixaNF.objects.create(
+                nota_fiscal=nf,
+                tipo='OCORRENCIA' if ocorrencia_obj.tipo == 'PROBLEMA' else 'ENTREGA',
+                comprovante_foto=request.FILES.get('foto'), # Ajustado para o nome que o JS envia
+                ocorrencia=ocorrencia_obj,
+                recebedor=request.data.get('recebedor'),
+                latitude=request.data.get('latitude'),
+                longitude=request.data.get('longitude')
+            )
 
-
+        # 4. Dispara a Task (Aqui o erro de integração não trava o motorista)
+        envia_baixa_para_tms.delay(baixa.id)
+        
+        # Retornamos sucesso para o App. O motorista verá o "✅ Registro Cadastrado"
+        return Response({
+            'mensagem': 'Sucesso! Registro salvo.',
+            'status_integracao': 'pendente' # O App sabe que foi salvo localmente
+        }, status=status.HTTP_201_CREATED)
 class ManifestoFinalizacaoView(views.APIView):
     """
     POST: Finaliza o manifesto ativo, requerendo o KM final.

@@ -119,7 +119,7 @@ class NotaFiscal(models.Model):
     manifesto = models.ForeignKey(Manifesto, on_delete=models.CASCADE, related_name='notas_fiscais')
     
     # Chave de acesso e Número não são únicos globalmente, mas são únicos DENTRO DESTE MANIFESTO
-    chave_acesso = models.CharField(max_length=44, null=True, blank=True, verbose_name="Chave de Acesso") 
+    chave_acesso = models.CharField(max_length=44, null=True, unique=True, blank=True, verbose_name="Chave de Acesso") 
     numero_nota = models.CharField(max_length=20, verbose_name="Número NF")
     
     destinatario = models.CharField(max_length=255, verbose_name="Destinatário")
@@ -139,7 +139,6 @@ class NotaFiscal(models.Model):
         verbose_name = "Nota Fiscal"
         verbose_name_plural = "Notas Fiscais"
         # RESTRIÇÃO CHAVE: Garante que a NF-e não seja duplicada no mesmo manifesto
-        unique_together = ('manifesto', 'chave_acesso')
         indexes = [models.Index(fields=['chave_acesso'])]
 
 
@@ -195,6 +194,8 @@ class BaixaNF(models.Model):
     log_erro_tms = models.TextField(null=True, blank=True, verbose_name="Log de Erro ESL")
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    integrado_tms = models.BooleanField(default=False, null=True, blank=True, verbose_name="Integrado ESL")
+    
 
     def __str__(self):
         return f"Baixa de {self.nota_fiscal.numero_nota} ({self.tipo})"

@@ -57,8 +57,11 @@ async function carregarMotorista(accessToken) {
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
     alertBox.classList.add('d-none');
-
-    const cpf = document.getElementById('cpf').value.trim();
+    // 1. Pega o valor bruto do input
+    const cpfBruto = document.getElementById('cpf').value.trim();
+    // 2. Remove tudo que não for número
+    const cpf = cpfBruto.replace(/\D/g, '');
+    
     const senha = document.getElementById('senha')?.value;
     const confirmar = document.getElementById('confirmar_senha')?.value;
 
