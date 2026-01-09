@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const authenticated = await initAuth();
     if (authenticated) {
+        forcarUpdatePWA();
         atualizarDadosHeader();
         verificarEstadoInicial();
         // CHAME DIRETAMENTE AQUI (sem o addEventListener)
@@ -91,7 +92,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.location.href = LOGIN_URL;
     }
 });
+// =====================================================
+// Forçar a atualização do Service Worker e limpar cache
+// =====================================================
+function forcarUpdatePWA() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(registrations => {
+            for (let registration of registrations) {
+                // 1. Pede para o Service Worker buscar atualizações no servidor
+                registration.update();
+                
+                // 2. Se houver um novo esperando, ele força a ativação
+                if (registration.waiting) {
+                    registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                }
+            }
+        });
+    }
+}
 
+// Escuta a mudança de controle (quando o SW novo assume) e dá o REFRESH
+navigator.serviceWorker.addEventListener('controllerchange', () => {
+    console.log("Novo Service Worker assumiu. Recarregando...");
+    window.location.reload(true); // O 'true' força o reload do servidor
+});
 // =====================================================
 // FLUXO DE BUSCA E MONITORAMENTO (POLLING VIVO)
 // =====================================================
