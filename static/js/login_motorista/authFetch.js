@@ -47,7 +47,7 @@ async function authFetch(url, options = {}) {
     
     if (refreshed) {
         access = localStorage.getItem('accessToken');
-        options.headers.Authorization = `Bearer {access}`;
+        options.headers.Authorization = `Bearer ${access}`;
         return await fetch(url, options);
     } else {
         // Se falhar o refresh durante a busca de notas, 

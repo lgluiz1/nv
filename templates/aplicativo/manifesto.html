@@ -9,6 +9,7 @@
     <link rel="apple-touch-icon" href="/static/images/icon-160x160.png">
     <title>App Motorista - Rotas</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link href="{% static 'css/app.css' %}?v=1.0.4" rel="stylesheet">
     <style>
         /* Estilos Customizados para Mobile */
@@ -54,7 +55,7 @@
                         <span class="user-role">Motorista</span>
                     </div>
                     <div class="avatar-circle">
-                        <i class="bi bi-person-fill"></i>
+                        <i class="bi bi-person-fill" style="color: white; font-size: 1.5rem;"></i>
                     </div>
                 </button>
 
@@ -157,14 +158,15 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="kmFinalModalLabel">Finalização de Jornada</h5>
+        <h5 class="modal-title text-danger fw-bold" id="kmFinalModalLabel">Finalização de Jornada</h5>
       </div>
       <div class="modal-body">
-        <p>Todas as notas foram processadas. Insira a quilometragem final para concluir o manifesto.</p>
+        <p class="text-muted mb-3 small text-center">Parabens por concluir a jornada.</p>
+        <p class="text-muted small text-center">Informe o KM final para finalizar a jornada.</p>
         <form id="finalizar-form-modal">
             <input type="number" id="km-final" class="form-control mb-3" placeholder="KM Final (Obrigatório)" required>
             <div id="finalizar-message" class="text-danger small mb-2"></div>
-            <button type="submit" class="btn btn-danger w-100">Confirmar e Finalizar</button>
+            <button type="submit" class="btn btn-danger w-100">Finalizar</button>
         </form>
       </div>
     </div>
@@ -349,13 +351,13 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content text-center p-4">
             <div class="mb-3">
-                <i class="bi bi-cloud-arrow-down-fill text-success" style="font-size: 4rem;"></i>
+                <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
             </div>
-            <h5 class="fw-bold">Nova Versão Disponível!</h5>
-            <p class="text-muted">Atualizamos o sistema com melhorias e correções para sua rota.</p>
+            <h5 class="fw-bold">Aplicativo Atualizado!</h5>
+            <p class="text-muted">As novas melhorias já foram baixadas. Clique em OK para aplicar as alterações.</p>
             <div class="mt-3">
                 <button type="button" class="btn btn-success w-100 fw-bold" onclick="recarregarPWA()">
-                    ATUALIZAR AGORA
+                    ENTENDI / OK
                 </button>
             </div>
         </div>
@@ -363,32 +365,49 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
- let newWorker;
-const modalUpdate = new bootstrap.Modal(document.getElementById('modalUpdate'));
+ let modalUpdate;
+
+// Garante que o Bootstrap carregou o modal antes de tentar usar
+document.addEventListener('DOMContentLoaded', function() {
+    modalUpdate = new bootstrap.Modal(document.getElementById('modalUpdate'));
+});
 
 if ('serviceWorker' in navigator) {
-    // Note: use o caminho correto onde o Django serve o seu Service Worker
+    // 1. Registra o SW
     navigator.serviceWorker.register('/serviceworker.js').then(reg => {
+        
+        // 2. Monitora se o SW atualizou e assumiu o controle
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            // Isso dispara quando o novo SW ativa e toma o lugar do antigo
+            if (modalUpdate) {
+                // Muda o texto do modal dinamicamente antes de mostrar
+                document.querySelector('#modalUpdate h5').innerText = "App Atualizado!";
+                document.querySelector('#modalUpdate p').innerText = "Sua rota e sistema foram atualizados com sucesso.";
+                modalUpdate.show();
+            }
+        });
+
+        // 3. Caso o navegador detecte a mudança mas ainda esteja instalando
         reg.addEventListener('updatefound', () => {
-            newWorker = reg.installing;
+            const newWorker = reg.installing;
             newWorker.addEventListener('statechange', () => {
-                // Se o novo worker foi instalado e já existe um antigo controlando a página
-                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    modalUpdate.show(); // DISPARA O MODAL
+                if (newWorker.state === 'activated' && !navigator.serviceWorker.controller) {
+                    // Primeiro acesso ou atualização forçada
+                    console.log('SW Ativado com sucesso');
                 }
             });
         });
     });
 }
 
-// Função chamada pelo botão do Modal
+// Função de Reinicialização Completa (Botão OK)
 async function recarregarPWA() {
-    // 1. Limpa caches para garantir que não pegue lixo
+    // Força a limpeza total e recarrega na raiz para garantir
     if ('caches' in window) {
         const names = await caches.keys();
         await Promise.all(names.map(name => caches.delete(name)));
     }
-    // 2. Recarrega a página forçando busca no servidor
+    // O reload(true) força o navegador a ignorar o cache do disco
     window.location.reload(true);
 }
 </script>

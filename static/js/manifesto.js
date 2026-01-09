@@ -23,11 +23,70 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (authenticated) {
         atualizarDadosHeader();
         verificarEstadoInicial();
+        // CHAME DIRETAMENTE AQUI (sem o addEventListener)
+        carregarDadosCabecalho();
 
         const inputCamera = document.getElementById('camera-nativa');
         if (inputCamera) {
             inputCamera.addEventListener('change', handleCameraNativa);
         }
+    // =====================================================
+    // FLUXO DE FINALIZAÇÃO DE MANIFESTO
+    // =====================================================
+    document.getElementById('finalizar-form-modal').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const kmFinal = document.getElementById('km-final').value;
+    const msgDiv = document.getElementById('finalizar-message');
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const modalBody = document.querySelector('#kmFinalModal .modal-body');
+
+    if (!kmFinal) {
+        msgDiv.innerText = "Por favor, insira a quilometragem.";
+        return;
+    }
+
+    // Desabilita o botão
+    submitBtn.disabled = true;
+    submitBtn.innerText = "Finalizando...";
+
+    try {
+        const response = await authFetch(`${API_BASE}manifesto/finalizar/`, {
+            method: 'POST',
+            body: JSON.stringify({ km_final: kmFinal })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            // SUCESSO: Transforma o conteúdo do modal
+            modalBody.innerHTML = `
+                <div class="text-center p-4 animate__animated animate__zoomIn">
+                    <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
+                    <h4 class="mt-3 fw-bold">Obrigado!</h4>
+                    <p class="text-muted">Manifesto finalizado com sucesso.</p>
+                    <div class="badge bg-light text-dark border p-2">Sincronizando com o sistema...</div>
+                </div>
+            `;
+
+            // Aguarda 3 segundos para o motorista ver a mensagem e recarrega
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+
+        } else {
+            // Erro vindo da View
+            msgDiv.innerText = data.mensagem || "Erro ao finalizar.";
+            submitBtn.disabled = false;
+            submitBtn.innerText = "Confirmar e Finalizar";
+        }
+    } catch (err) {
+        console.error("Erro no fechamento:", err);
+        msgDiv.innerText = "Falha na conexão com o servidor.";
+        submitBtn.disabled = false;
+        submitBtn.innerText = "Confirmar e Finalizar";
+    }
+});
     } else {
         window.location.href = LOGIN_URL;
     }
@@ -158,8 +217,12 @@ async function atualizarListaViva(numeroManifesto) {
 
         if (container && notas.length > 0) {
             let htmlNotas = '';
+            let totalFinalizadas = 0;
+
             notas.forEach(nf => {
                 const baixada = nf.ja_baixada;
+                if (baixada) totalFinalizadas++;
+
                 htmlNotas += `
                     <div class="card mb-3 shadow-sm border-start border-${baixada ? 'success' : 'primary'} border-4 animate__animated animate__fadeInUp">
                         <div class="card-body p-3">
@@ -176,8 +239,38 @@ async function atualizarListaViva(numeroManifesto) {
                         </div>
                     </div>`;
             });
+
             container.innerHTML = htmlNotas;
-            if (contador) contador.innerText = `${notas.length} Notas Processadas`;
+
+            // --- LÓGICA DE CONTADORES DINÂMICOS ---
+            if (contador) {
+                // Criamos o HTML dos dois contadores juntos
+                let htmlContadores = `
+                    <div class="d-flex gap-2">
+                        <span class="badge bg-secondary p-2">${notas.length} Notas no Manifesto</span>
+                `;
+
+                // Só adiciona o badge verde se houver notas finalizadas
+                if (totalFinalizadas > 0) {
+                    htmlContadores += `
+                        <span class="badge bg-success p-2 animate__animated animate__bounceIn">
+                            <i class="bi bi-check2-circle"></i> ${totalFinalizadas} Finalizadas
+                        </span>
+                    `;
+                }
+                if (notas.length > 0 && totalFinalizadas === notas.length) {
+                    const modalKM = new bootstrap.Modal(document.getElementById('kmFinalModal'));
+                    // Pequeno delay para garantir que a última nota apareça na tela antes do modal abrir
+                    setTimeout(() => {
+                        modalKM.show();
+                    }, 800);
+                }
+
+                htmlContadores += `</div>`;
+                
+                // Injeta os badges no elemento de contador
+                contador.innerHTML = htmlContadores;
+            }
         }
     } catch (err) { console.error("Erro na atualização viva:", err); }
 }
@@ -396,6 +489,34 @@ function abrirModalBaixa(numeroNota, chaveAcesso) {
     const mBaixa = new bootstrap.Modal(document.getElementById('modalBaixa'));
     mBaixa.show();
 }
+async function carregarDadosCabecalho() {
+    try {
+        const response = await authFetch(`${API_BASE}motorista/perfil/`);
+        
+        if (response && response.ok) {
+            const dados = await response.json();
+            console.log("Dados do perfil carregados:", dados);
+            
+            // 1. Atualiza a foto se existir
+            const avatarContainer = document.querySelector('.avatar-circle');
+            if (dados.foto_url && avatarContainer) {
+                avatarContainer.innerHTML = `<img src="${dados.foto_url}" alt="Foto" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">`;
+            }
+
+            // 2. Opcional: Se você tiver um campo de nome no header, pode atualizar aqui também
+            const nomeExibicao = document.getElementById('nome-motorista');
+            if (nomeExibicao) nomeExibicao.innerText = dados.nome;
+            
+        } else {
+            console.log("Não foi possível carregar os dados do perfil ou motorista anônimo.");
+        }
+    } catch (error) {
+        console.error("Erro ao buscar dados do motorista:", error);
+    }
+}
+
+
+
 
 // =====================================================
 // UTILITÁRIOS FINAIS
