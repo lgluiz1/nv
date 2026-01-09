@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const msgDiv = document.getElementById('finalizar-message');
             const submitBtn = e.target.querySelector('button[type="submit"]');
             const modalBody = document.querySelector('#kmFinalModal .modal-body');
-            const manifestoId = document.getElementById('manifesto-id-display').innerText;
+            const manifestoId = document.getElementById('manifesto-number').innerText;
 
             if (!kmFinal) {
                 msgDiv.innerText = "Por favor, insira a quilometragem.";
