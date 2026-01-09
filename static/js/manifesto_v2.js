@@ -31,37 +31,41 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (inputCamera) {
             inputCamera.addEventListener('change', handleCameraNativa);
         }
-    // =====================================================
-    // FLUXO DE FINALIZAÇÃO DE MANIFESTO
-    // =====================================================
-    document.getElementById('finalizar-form-modal').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const kmFinal = document.getElementById('km-final').value;
-    const msgDiv = document.getElementById('finalizar-message');
-    const submitBtn = e.target.querySelector('button[type="submit"]');
-    const modalBody = document.querySelector('#kmFinalModal .modal-body');
+        // =====================================================
+        // FLUXO DE FINALIZAÇÃO DE MANIFESTO
+        // =====================================================
+        document.getElementById('finalizar-form-modal').addEventListener('submit', async (e) => {
+            e.preventDefault();
 
-    if (!kmFinal) {
-        msgDiv.innerText = "Por favor, insira a quilometragem.";
-        return;
-    }
+            const kmFinal = document.getElementById('km-final').value;
+            const msgDiv = document.getElementById('finalizar-message');
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const modalBody = document.querySelector('#kmFinalModal .modal-body');
+            const manifestoId = document.getElementById('manifesto-id-display').innerText;
 
-    // Desabilita o botão
-    submitBtn.disabled = true;
-    submitBtn.innerText = "Finalizando...";
+            if (!kmFinal) {
+                msgDiv.innerText = "Por favor, insira a quilometragem.";
+                return;
+            }
 
-    try {
-        const response = await authFetch(`${API_BASE}manifesto/finalizar/`, {
-            method: 'POST',
-            body: JSON.stringify({ km_final: kmFinal })
-        });
+            // Desabilita o botão
+            submitBtn.disabled = true;
+            submitBtn.innerText = "Finalizando...";
 
-        const data = await response.json();
+            try {
+                const response = await authFetch(`${API_BASE}manifesto/finalizar/`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        km_final: kmFinal,
+                        manifesto_id: manifestoId // Enviando o ID específico
+                    })
+                });
 
-        if (response.ok) {
-            // SUCESSO: Transforma o conteúdo do modal
-            modalBody.innerHTML = `
+                const data = await response.json();
+
+                if (response.ok) {
+                    // SUCESSO: Transforma o conteúdo do modal
+                    modalBody.innerHTML = `
                 <div class="text-center p-4 animate__animated animate__zoomIn">
                     <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
                     <h4 class="mt-3 fw-bold">Obrigado!</h4>
@@ -70,24 +74,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
             `;
 
-            // Aguarda 3 segundos para o motorista ver a mensagem e recarrega
-            setTimeout(() => {
-                window.location.reload();
-            }, 3000);
+                    // Aguarda 3 segundos para o motorista ver a mensagem e recarrega
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 3000);
 
-        } else {
-            // Erro vindo da View
-            msgDiv.innerText = data.mensagem || "Erro ao finalizar.";
-            submitBtn.disabled = false;
-            submitBtn.innerText = "Confirmar e Finalizar";
-        }
-    } catch (err) {
-        console.error("Erro no fechamento:", err);
-        msgDiv.innerText = "Falha na conexão com o servidor.";
-        submitBtn.disabled = false;
-        submitBtn.innerText = "Confirmar e Finalizar";
-    }
-});
+                } else {
+                    // Erro vindo da View
+                    msgDiv.innerText = data.mensagem || "Erro ao finalizar.";
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = "Confirmar e Finalizar";
+                }
+            } catch (err) {
+                console.error("Erro no fechamento:", err);
+                msgDiv.innerText = "Falha na conexão com o servidor.";
+                submitBtn.disabled = false;
+                submitBtn.innerText = "Confirmar e Finalizar";
+            }
+        });
     } else {
         window.location.href = LOGIN_URL;
     }
@@ -101,7 +105,7 @@ function forcarUpdatePWA() {
             for (let registration of registrations) {
                 // 1. Pede para o Service Worker buscar atualizações no servidor
                 registration.update();
-                
+
                 // 2. Se houver um novo esperando, ele força a ativação
                 if (registration.waiting) {
                     registration.waiting.postMessage({ type: 'SKIP_WAITING' });
@@ -129,7 +133,7 @@ async function handleManifestoSearch(event) {
 
     const loadingText = document.getElementById('loadingMessage');
     if (loadingText) loadingText.innerText = "Validando acesso e motorista...";
-    
+
     loadingModal?.show();
 
     try {
@@ -137,7 +141,7 @@ async function handleManifestoSearch(event) {
             method: 'POST',
             body: JSON.stringify({ numero_manifesto: numero }),
         });
-        
+
         if (response.ok) {
             startPolling();
         } else {
@@ -152,16 +156,16 @@ async function handleManifestoSearch(event) {
 
 function startPolling() {
     stopPolling();
-    jaMudouDeTela = false; 
+    jaMudouDeTela = false;
 
     pollingInterval = setInterval(async () => {
         try {
             const response = await authFetch(`${API_BASE}manifesto/status/?numero_manifesto=${manifestoAtual}`);
-            
+
             // PROTEÇÃO 401: Ignora ciclo se o token estiver renovando
             if (!response || response.status === 401) {
                 console.warn("Autenticação em renovação...");
-                return; 
+                return;
             }
 
             const data = await response.json();
@@ -170,7 +174,7 @@ function startPolling() {
             if (data.status === 'ENRIQUECENDO' || data.status === 'AGUARDANDO' || data.status === 'PROCESSANDO') {
                 if (!jaMudouDeTela) {
                     jaMudouDeTela = true;
-                    loadingModal?.hide(); 
+                    loadingModal?.hide();
                     renderEstruturaLista(manifestoAtual);
                 } else {
                     atualizarListaViva(manifestoAtual);
@@ -180,8 +184,8 @@ function startPolling() {
             // 2. ESTADO FINAL: Carga concluída (5 a 50 notas)
             if (data.status === 'PROCESSADO') {
                 stopPolling();
-                await atualizarListaViva(manifestoAtual); 
-                
+                await atualizarListaViva(manifestoAtual);
+
                 const contador = document.getElementById('contador-notas');
                 if (contador) {
                     contador.className = "badge bg-success animate__animated animate__bounceIn";
@@ -190,14 +194,14 @@ function startPolling() {
 
                 // Finaliza e recarrega para estabilizar banco local
                 setTimeout(() => { window.location.reload(); }, 1500);
-            } 
+            }
             else if (data.status === 'ERRO') {
                 stopPolling();
                 loadingModal?.hide();
                 renderSearchScreen(data.mensagem_erro || 'Erro no processamento', 'error');
             }
-        } catch (err) { 
-            console.error("Erro no ciclo de polling:", err); 
+        } catch (err) {
+            console.error("Erro no ciclo de polling:", err);
         }
     }, 3000);
 }
@@ -256,10 +260,10 @@ async function atualizarListaViva(numeroManifesto) {
                             </div>
                             <p class="small text-muted mb-1">${nf.destinatario}</p>
                             <p class="small text-muted mb-2" style="font-size: 0.75rem;"><i class="bi bi-geo-alt"></i> ${nf.endereco_entrega}</p>
-                            ${!baixada ? 
-                                `<button class="btn btn-sm btn-primary w-100" onclick="abrirModalBaixa('${nf.numero_nota}', '${nf.chave_acesso}')">Dar Baixa</button>` :
-                                `<button class="btn btn-sm btn-outline-success w-100" onclick='abrirModalDetalhes(${JSON.stringify(nf.dados_baixa)})'>Ver Detalhes</button>`
-                            }
+                            ${!baixada ?
+                        `<button class="btn btn-sm btn-primary w-100" onclick="abrirModalBaixa('${nf.numero_nota}', '${nf.chave_acesso}')">Dar Baixa</button>` :
+                        `<button class="btn btn-sm btn-outline-success w-100" onclick='abrirModalDetalhes(${JSON.stringify(nf.dados_baixa)})'>Ver Detalhes</button>`
+                    }
                         </div>
                     </div>`;
             });
@@ -291,7 +295,7 @@ async function atualizarListaViva(numeroManifesto) {
                 }
 
                 htmlContadores += `</div>`;
-                
+
                 // Injeta os badges no elemento de contador
                 contador.innerHTML = htmlContadores;
             }
@@ -352,7 +356,7 @@ async function salvarRegistro() {
     const inputRecebedor = document.getElementById('input-recebedor');
     const inputChave = document.getElementById('hidden-chave-nf');
     const canvas = document.getElementById('canvas-preview');
-    
+
     const cod = selectOcorrencia.value;
     const chaveNF = inputChave.value;
     const temFoto = (canvas.style.display === 'block');
@@ -458,7 +462,7 @@ function atualizarStatusUI(tipo, titulo, mensagem) {
 function configurarBotaoWhats(erroMsg, chave) {
     const btn = document.getElementById('btn-reportar');
     if (!btn) return;
-    
+
     btn.style.display = 'block';
     btn.onclick = () => {
         const msg = `Olá! Tive um problema ao registrar a baixa.\nErro: ${erroMsg}\nChave: ${chave}`;
@@ -477,10 +481,10 @@ function handleCameraNativa(event) {
     const canvas = document.getElementById('canvas-preview');
     const ctx = canvas.getContext('2d');
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = function (e) {
         const img = new Image();
-        img.onload = function() {
-            const larguraDesejada = 1600; 
+        img.onload = function () {
+            const larguraDesejada = 1600;
             const escala = larguraDesejada / img.width;
             canvas.width = larguraDesejada;
             canvas.height = img.height * escala;
@@ -502,7 +506,7 @@ function abrirModalBaixa(numeroNota, chaveAcesso) {
 
     tituloEl.innerText = `Ocorrência NF-e ${numeroNota}`;
     inputChave.value = chaveAcesso;
-    
+
     // Reset da Câmera
     const canvas = document.getElementById('canvas-preview');
     if (canvas) canvas.style.display = 'none';
@@ -516,11 +520,11 @@ function abrirModalBaixa(numeroNota, chaveAcesso) {
 async function carregarDadosCabecalho() {
     try {
         const response = await authFetch(`${API_BASE}motorista/perfil/`);
-        
+
         if (response && response.ok) {
             const dados = await response.json();
             console.log("Dados do perfil carregados:", dados);
-            
+
             // 1. Atualiza a foto se existir
             const avatarContainer = document.querySelector('.avatar-circle');
             if (dados.foto_url && avatarContainer) {
@@ -530,7 +534,7 @@ async function carregarDadosCabecalho() {
             // 2. Opcional: Se você tiver um campo de nome no header, pode atualizar aqui também
             const nomeExibicao = document.getElementById('nome-motorista');
             if (nomeExibicao) nomeExibicao.innerText = dados.nome;
-            
+
         } else {
             console.log("Não foi possível carregar os dados do perfil ou motorista anônimo.");
         }

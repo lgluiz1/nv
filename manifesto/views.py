@@ -15,42 +15,29 @@ from .serializers import (
 
 
 class ManifestoFinalizacaoView(views.APIView):
-    """
-    POST: Finaliza o manifesto ativo, requerendo o KM final.
-    """
-    permission_classes = [IsAuthenticated]
-    
-    # Rota POST: /api/manifesto/finalizar/
     def post(self, request):
         km_final = request.data.get('km_final')
-        motorista = request.user.motorista_perfil
-        
-        if not km_final or not str(km_final).isdigit():
-            return Response({'mensagem': 'O KM final é obrigatório e deve ser numérico.'}, status=status.HTTP_400_BAD_REQUEST)
+        manifesto_id = request.data.get('manifesto_id') # Recebe o ID do JS
+
+        if not manifesto_id:
+            return Response({"mensagem": "ID do manifesto não fornecido."}, status=400)
 
         try:
-            manifesto = Manifesto.objects.get(motorista=motorista, finalizado=False)
+            # Agora buscamos pelo ID exato
+            manifesto = Manifesto.objects.get(id=manifesto_id)
             
-            # Checa se todas as NFs foram resolvidas
-            if manifesto.notas_fiscais.filter(status='PENDENTE').exists():
-                 return Response({
-                    'mensagem': 'Ainda há notas pendentes neste manifesto. Complete todas as baixas.'
-                }, status=status.HTTP_400_BAD_REQUEST)
+            # Validação extra: garantir que não está finalizado
+            if manifesto.finalizado:
+                return Response({"mensagem": "Este manifesto já foi encerrado."}, status=400)
 
-            # Finaliza o manifesto
             manifesto.km_final = km_final
             manifesto.finalizado = True
-            manifesto.status = 'FINALIZADO'
-            manifesto.data_finalizacao = timezone.now()
             manifesto.save()
-            
-            # TO DO: Disparar Task Celery para enviar a finalização do manifesto para o TMS
-            
-            return Response({'mensagem': 'Manifesto finalizado com sucesso!'}, status=status.HTTP_200_OK)
+
+            return Response({"mensagem": "Sucesso!"}, status=200)
 
         except Manifesto.DoesNotExist:
-            return Response({'mensagem': 'Nenhum manifesto ativo para finalizar.'}, status=status.HTTP_404_NOT_FOUND)
-
+            return Response({"mensagem": "Manifesto não encontrado."}, status=404)
 
 class OcorrenciaListView(generics.ListAPIView):
     """
