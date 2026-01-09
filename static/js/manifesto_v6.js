@@ -41,10 +41,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             const msgDiv = document.getElementById('finalizar-message');
             const submitBtn = e.target.querySelector('button[type="submit"]');
             const modalBody = document.querySelector('#kmFinalModal .modal-body');
+            
 
             const manifestoId = localStorage.getItem('manifesto_ativo') || 
                         manifestoAtual || 
                         document.getElementById('manifesto-id-display')?.innerText;
+            console.log("Tentando finalizar o Manifesto ID:", manifestoId);
 
     if (!manifestoId) {
         document.getElementById('finalizar-message').innerText = "Erro: Número do manifesto não identificado. Recarregue a página.";
@@ -320,16 +322,29 @@ async function atualizarListaViva(numeroManifesto) {
 function renderSearchScreen(message = null, type = 'info') {
     stopPolling();
     const content = document.getElementById('app-content');
-    const alertHTML = message ? `<div class="alert alert-${type === 'error' ? 'danger' : 'info'} animate__animated animate__shakeX">${message}</div>` : '';
+    const alertHTML = message ? `<div class="alert alert-${type === 'error' ? 'danger' : 'info'} animate__animated animate__shakeX w-100 mb-3">${message}</div>` : '';
 
     content.innerHTML = `
-        <div class="card shadow-sm p-4 mt-3">
-            <h5 class="text-primary mb-3 text-center">Buscar Manifesto</h5>
-            ${alertHTML}
-            <form id="search-form">
-                <input type="number" id="manifesto-number" class="form-control mb-3" placeholder="Número do Manifesto" required />
-                <button class="btn btn-primary w-100">Buscar</button>
-            </form>
+        <div class="search-container-card animate__animated animate__fadeIn">
+            <div class="card shadow border-0 p-4" style="border-radius: 20px;">
+                <div class="text-center mb-4">
+                    <i class="bi bi-truck text-primary" style="font-size: 2.5rem;"></i>
+                    <h5 class="fw-bold mt-2">Buscar Manifesto</h5>
+                    <p class="text-muted small">Digite o número para carregar as notas</p>
+                </div>
+
+                ${alertHTML}
+
+                <form id="search-form">
+                    <div class="form-floating mb-3">
+                        <input type="number" id="manifesto-number" class="form-control" placeholder="00000" required>
+                        <label for="manifesto-number">Número do Manifesto</label>
+                    </div>
+                    <button class="btn btn-primary btn-lg w-100 shadow-sm fw-bold" style="border-radius: 12px;">
+                        CARREGAR ROTA
+                    </button>
+                </form>
+            </div>
         </div>
     `;
     document.getElementById('search-form').addEventListener('submit', handleManifestoSearch);
