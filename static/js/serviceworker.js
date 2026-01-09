@@ -1,31 +1,48 @@
-var staticCacheName = "django-pwa-v1" + new Date().getTime();
-var filesToCache = [
+// UNIFICADO: Versão única para controle total de cache
+const CACHE_NAME = 'fluxo-logistica-v1.0'; // Mude aqui para forçar atualização
+
+const filesToCache = [
     '/app/',
-    '/app/login/', // Adicionei para garantir que o login funcione offline
+    '/app/login/',
     '/static/css/app.css',
     '/static/css/login.css',
-    // Caminhos corrigidos conforme sua imagem:
     '/static/js/manifesto.js',
     '/static/images/icon-160x160.png',
     '/static/images/icon-512x512.png'
 ];
 
-// Cache on install
-self.addEventListener("install", event => {
-    this.skipWaiting();
+// Instalação: Abre o cache e guarda os arquivos
+self.addEventListener('install', (event) => {
+    self.skipWaiting(); // Força a nova versão a assumir
     event.waitUntil(
-        caches.open(staticCacheName)
-            .then(cache => {
-                return cache.addAll(filesToCache);
-            })
+        caches.open(CACHE_NAME).then((cache) => {
+            return cache.addAll(filesToCache);
+        })
     );
 });
 
-// Serve from cache
-self.addEventListener("fetch", event => {
+// Ativação: Deleta QUALQUER cache que não seja a versão atual
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        caches.keys().then((cacheNames) => {
+            return Promise.all(
+                cacheNames.map((cacheName) => {
+                    if (cacheName !== CACHE_NAME) {
+                        console.log('Deletando cache antigo:', cacheName);
+                        return caches.delete(cacheName);
+                    }
+                })
+            );
+        })
+    );
+});
+
+// Busca (Fetch): Tenta buscar na rede primeiro para ter dados novos, 
+// se falhar (offline), pega do cache.
+self.addEventListener('fetch', (event) => {
     event.respondWith(
-        caches.match(event.request).then(response => {
-            return response || fetch(event.request);
+        fetch(event.request).catch(() => {
+            return caches.match(event.request);
         })
     );
 });
