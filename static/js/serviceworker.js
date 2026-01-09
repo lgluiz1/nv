@@ -1,5 +1,5 @@
 // UNIFICADO: Versão única para controle total de cache
-const CACHE_NAME = 'fluxo-logistica-v1.10'; // Mude aqui para forçar atualização
+const CACHE_NAME = 'fluxo-logistica-v1.11'; // Mude aqui para forçar atualização
 
 const filesToCache = [
     '/app/',
