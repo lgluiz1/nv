@@ -24,7 +24,7 @@ class ManifestoFinalizacaoView(views.APIView):
 
         try:
             # Agora buscamos pelo ID exato
-            manifesto = Manifesto.objects.get(id=manifesto_id)
+            manifesto = Manifesto.objects.get(numero_manifesto=manifesto_id)
             
             # Validação extra: garantir que não está finalizado
             if manifesto.finalizado:
@@ -32,6 +32,8 @@ class ManifestoFinalizacaoView(views.APIView):
 
             manifesto.km_final = km_final
             manifesto.finalizado = True
+            manifesto.status = "FINALIZADO"
+            manifesto.data_finalizacao = timezone.now()
             manifesto.save()
 
             return Response({"mensagem": "Sucesso!"}, status=200)
