@@ -4,9 +4,9 @@ const CACHE_NAME = 'fluxo-logistica-v1.6'; // Mude aqui para forçar atualizaç�
 const filesToCache = [
     '/app/',
     '/app/login/',
-    '/static/css/app.css',
+    //'/static/css/app.css?v=1.0.5',
     '/static/css/login.css',
-    '/static/js/manifesto.js',
+    //'/static/js/manifesto.js?v=1.0.6',
     '/static/images/icon-160x160.png',
     '/static/images/icon-512x512.png'
 ];
