@@ -41,7 +41,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             const msgDiv = document.getElementById('finalizar-message');
             const submitBtn = e.target.querySelector('button[type="submit"]');
             const modalBody = document.querySelector('#kmFinalModal .modal-body');
-            const manifestoId = document.getElementById('manifesto-id-display').innerText;
+
+            const manifestoId = localStorage.getItem('manifesto_ativo') || 
+                        manifestoAtual || 
+                        document.getElementById('manifesto-id-display')?.innerText;
+
+    if (!manifestoId) {
+        document.getElementById('finalizar-message').innerText = "Erro: Número do manifesto não identificado. Recarregue a página.";
+        return;
+    }
 
             if (!kmFinal) {
                 msgDiv.innerText = "Por favor, insira a quilometragem.";
@@ -76,6 +84,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     // Aguarda 3 segundos para o motorista ver a mensagem e recarrega
                     setTimeout(() => {
+                        localStorage.removeItem('manifesto_ativo');
                         window.location.reload();
                     }, 3000);
 
@@ -127,7 +136,6 @@ navigator.serviceWorker.addEventListener('controllerchange', () => {
 async function handleManifestoSearch(event) {
     event.preventDefault();
     const numero = document.getElementById('manifesto-number').value.trim();
-    document.getElementById('manifesto-id-display').innerText = numero;
     if (!numero) return;
 
     manifestoAtual = numero;
@@ -144,6 +152,7 @@ async function handleManifestoSearch(event) {
         });
 
         if (response.ok) {
+            localStorage.setItem('manifesto_ativo', numero);
             startPolling();
         } else {
             loadingModal?.hide();
@@ -331,14 +340,24 @@ async function verificarEstadoInicial() {
         const response = await authFetch(`${API_BASE}manifesto/verificar-ativo/`);
         if (!response || !response.ok) return;
         const data = await response.json();
+        
         if (data.tem_manifesto) {
+            // --- AQUI ESTÁ A CHAVE ---
+            manifestoAtual = data.numero_manifesto; // Salva na variável global
+            localStorage.setItem('manifesto_ativo', data.numero_manifesto);
+            
+            // Garante que o span no HTML tenha o ID para a função de finalizar não dar erro
+            const el = document.getElementById('manifesto-id-display');
+            if (el) el.innerText = data.numero_manifesto;
+
             renderListaEntregasFinal(data.numero_manifesto);
         } else {
             renderSearchScreen();
         }
-    } catch (err) { renderSearchScreen(); }
+    } catch (err) { 
+        renderSearchScreen(); 
+    }
 }
-
 async function renderListaEntregasFinal(numeroManifesto) {
     // Mesma lógica do renderEstruturaLista, mas usada para carregamento inicial (Estado Ativo)
     renderEstruturaLista(numeroManifesto);
