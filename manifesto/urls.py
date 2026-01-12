@@ -10,6 +10,7 @@ from manifesto.rotas.verificacao import VerificarManifestoAtivoView
 from manifesto.rotas.baixa import RegistrarBaixaView
 from manifesto.rotas.motorista_perfil import perfil_motorista
 from manifesto.views import ManifestoFinalizacaoView
+from manifesto.rotas.historicomanifestos import HistoricoManifestosView
 
 urlpatterns = [
     path('manifesto/busca/', BuscarManifestoView.as_view()),
@@ -19,6 +20,7 @@ urlpatterns = [
     path('manifesto/preview/', StatusPreviewManifestoView.as_view()),
     path('manifesto/notas/', ListarNotasManifestoView.as_view()),
     path('manifesto/verificar-ativo/', VerificarManifestoAtivoView.as_view()),
+    path('manifesto/historico/', HistoricoManifestosView.as_view()),
     path('manifesto/registrar-baixa/', RegistrarBaixaView.as_view()),
     path('motorista/perfil/', perfil_motorista, name='motorista_perfil'),
     path('manifesto/finalizar/', ManifestoFinalizacaoView.as_view()),

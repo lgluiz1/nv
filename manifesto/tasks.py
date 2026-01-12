@@ -115,6 +115,101 @@ def enriquecer_dados_api(chave_nfe, numero_nfe):
     return None
 
 # =====================================================
+# TASK MUDA STATUS MANIFESTO PARA EM TRANSPORTE NO TMS
+# =====================================================
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def iniciar_transporte_manifesto_tms_task(self, numero_manifesto):
+    TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
+    URL = "https://quickdelivery.eslcloud.com.br/graphql"
+
+    HEADERS = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {TOKEN}"
+    }
+
+    """
+    - Busca manifesto no banco local
+    - Calcula km inicial pelo último manifesto finalizado
+    - Inicia transporte no TMS
+    - Atualiza manifesto local
+    """
+
+    try:
+        # -----------------------------------
+        # 1️⃣ Buscar manifesto local
+        # -----------------------------------
+        manifesto = Manifesto.objects.select_related("motorista").get(
+            numero_manifesto=numero_manifesto
+        )
+
+        if not manifesto.motorista:
+            raise Exception("Manifesto sem motorista vinculado")
+
+        # -----------------------------------
+        # 2️⃣ Buscar último manifesto FINALIZADO
+        # -----------------------------------
+        ultimo_manifesto = (
+            Manifesto.objects
+            .filter(
+                motorista=manifesto.motorista,
+                status="FINALIZADO",
+                km_final__isnull=False
+            )
+            .order_by("-data_finalizacao")
+            .first()
+        )
+
+        if not ultimo_manifesto:
+            raise Exception("Motorista não possui manifesto finalizado anterior")
+
+        km_inicial = ultimo_manifesto.km_final
+
+        # -----------------------------------
+        # 3️⃣ Chamar TMS
+        # -----------------------------------
+        payload = {
+            "query": """
+            mutation ($id: ID!, $params: ManifestStartTransportInput!) {
+              manifestStartTransport(id: $id, params: $params) {
+                success
+                errors
+              }
+            }
+            """,
+            "variables": {
+                "id": manifesto.numero_manifesto,  # ID do TMS
+                "params": {
+                    "km": float(km_inicial)
+                }
+            }
+        }
+
+        response = requests.post(URL, headers=HEADERS, json=payload, timeout=30)
+        response.raise_for_status()
+
+        result = response.json()["data"]["manifestStartTransport"]
+
+        if not result["success"]:
+            raise Exception(result["errors"])
+
+        # -----------------------------------
+        # 4️⃣ Atualizar manifesto local
+        # -----------------------------------
+        with transaction.atomic():
+            manifesto.km_inicial = km_inicial
+            manifesto.status = "EM_TRANSPORTE"
+            manifesto.save(update_fields=["km_inicial", "status"])
+
+        return {
+            "success": True,
+            "numero_manifesto": manifesto.numero_manifesto,
+            "km_inicial": km_inicial
+        }
+
+    except Exception as exc:
+        raise self.retry(exc=exc)
+
+# =====================================================
 # TASK PRINCIPAL DO CELERY
 # =====================================================
 
@@ -237,6 +332,8 @@ def buscar_manifesto_completo_task(self, log_id):
 
         log.status = 'PROCESSADO'
         log.save()
+        # 🔁 DISPARA TASK DE INÍCIO DE TRANSPORTE NO TMS
+        #iniciar_transporte_manifesto_tms_task.delay(numero_visual)
         return f"Manifesto {numero_visual} finalizado com {total_processadas} notas."
 
     except Exception as e:
@@ -266,11 +363,6 @@ def buscar_detalhes_esl_interno(chave, numero, token):
 
 
 
-# manifestos/tasks.py
-# manifesto/tasks.py
-import requests
-from celery import shared_task
-from django.utils import timezone
 
 @shared_task(bind=True, max_retries=5)
 def enviar_baixa_esl_task(self, baixa_id):
