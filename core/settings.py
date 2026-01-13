@@ -19,7 +19,7 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,0.0.0.0,').split(',')
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://1bdf6f7e1548.ngrok-free.app',
+    'https://d7dbeee3bc3a.ngrok-free.app',
 ]
 
 # Application definition
@@ -119,6 +119,23 @@ DATABASES = {
     }
 }
 
+# O HOST geralmente é o próprio domínio ou o IP do servidor iSpot
+FTP_HOST = "st63136.ispot.cc"  
+
+# As credenciais que você forneceu
+FTP_USER = "st63136"
+FTP_PASS = "xh3!B8Wp"
+
+# A URL base onde as imagens ficarão visíveis na internet
+# Ajuste o caminho final conforme a pasta que você criar no FTP
+# settings.py
+FTP_HOST = "st63136.ispot.cc"
+FTP_USER = "st63136"
+FTP_PASS = "xh3!B8Wp"
+
+# URL pública para o motorista visualizar no histórico depois
+FTP_BASE_URL = "https://st63136.ispot.cc/uploads/comprovantes-quickdelivery/"
+
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -178,7 +195,7 @@ REST_FRAMEWORK = {
 
 # --- Configurações JWT (JSON Web Token) ---
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
 
     'ROTATE_REFRESH_TOKENS': True,
