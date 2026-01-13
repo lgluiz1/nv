@@ -127,7 +127,17 @@
 
         <div class="mt-5">
             <form id="search-form">
-                <input type="number" id="manifesto-number" class="form-control" placeholder="Número do Manifesto" required>
+              <input
+    type="text"
+    id="manifesto-number"
+    class="form-control"
+    placeholder="Número do Manifesto"
+    required
+    inputmode="numeric"
+    pattern="[0-9]*"
+    oninput="this.value = this.value.replace(/\D/g, '')"
+/>
+
                 <button type="submit" class="btn btn-primary mt-3">Buscar Manifesto</button>
             </form>
         </div>
