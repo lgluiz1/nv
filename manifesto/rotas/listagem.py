@@ -24,7 +24,7 @@ class ListarNotasManifestoView(APIView):
                     'ocorrencia': baixa.ocorrencia.descricao,
                     'recebedor': baixa.recebedor,
                     'data': baixa.data_baixa.strftime('%d/%m/%Y %H:%M'),
-                    'foto_url': baixa.comprovante_foto.url if baixa.comprovante_foto else None,
+                    'foto_url': baixa.comprovante_foto_url if baixa and baixa.comprovante_foto_url else None,
                     'lat': float(baixa.latitude) if baixa.latitude else None,
                     'lng': float(baixa.longitude) if baixa.longitude else None
                 } if baixa else None

@@ -181,6 +181,7 @@ class BaixaNF(models.Model):
     tipo = models.CharField(max_length=10, choices=TIPO_CHOICES)
     
     comprovante_foto = models.ImageField(upload_to='comprovantes/', null=True, blank=True)
+    comprovante_foto_url = models.CharField(max_length=500, null=True, blank=True)
     
     # Vincula o código de ocorrência do TMS (o que o motorista escolheu no app)
     ocorrencia = models.ForeignKey(Ocorrencia, on_delete=models.SET_NULL, null=True, blank=True)

@@ -367,16 +367,17 @@ def buscar_detalhes_esl_interno(chave, numero, token):
 @shared_task(bind=True, max_retries=5)
 def enviar_baixa_esl_task(self, baixa_id):
     """
-    Task unificada: Busca dados, monta URL completa e envia para ESL.
+    Task unificada: Busca dados e envia a URL direta do FTP para a ESL.
     """
     from .models import BaixaNF
+    import requests
+    from django.utils import timezone
     
     TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
     URL_ESL = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
-    BASE_NGROK = "https://entregas.luizgustavo.tech" # Substitua pelo seu domínio fixo se tiver
     
     try:
-        # 1. Busca os dados com as relações (evita múltiplas consultas ao banco)
+        # 1. Busca os dados com as relações necessárias
         baixa = BaixaNF.objects.select_related(
             'nota_fiscal', 
             'ocorrencia', 
@@ -384,12 +385,13 @@ def enviar_baixa_esl_task(self, baixa_id):
         ).get(id=baixa_id)
         
         nf = baixa.nota_fiscal
-        motorista = nf.manifesto.motorista.nome_completo # Campo correto conforme seu model
+        motorista = nf.manifesto.motorista.nome_completo
 
-        # 2. Monta a URL completa da foto (essencial para a ESL baixar)
-        url_foto = f"{BASE_NGROK}{baixa.comprovante_foto.url}" if baixa.comprovante_foto else ""
+        # 2. Captura a URL direta do campo de texto (FTP link)
+        # Como o campo é CharField/URLField, pegamos o valor direto
+        url_foto = baixa.comprovante_foto_url if baixa.comprovante_foto_url else ""
         
-        # 3. Monta o payload exatamente como a documentação pede
+        # 3. Monta o payload conforme exigência do TMS
         payload = {
             "invoice_occurrence": {
                 "receiver": baixa.recebedor or "Nao identificado",
@@ -401,7 +403,7 @@ def enviar_baixa_esl_task(self, baixa_id):
                 },
                 "invoice": {
                     "key": nf.chave_acesso,
-                    "delivery_receipt_url": url_foto
+                    "delivery_receipt_url": url_foto  # Link público do FTP
                 },
                 "manifest": {
                     "id": nf.manifesto.numero_manifesto
@@ -409,20 +411,19 @@ def enviar_baixa_esl_task(self, baixa_id):
             }
         }
 
-        # 4. Envio para a ESL
+        # 4. Envio para a ESL (Removido headers de ngrok pois agora é link direto)
         headers = {
             'Content-Type': 'application/json', 
-            'Authorization': f'Bearer {TOKEN}',
-            'ngrok-skip-browser-warning': 'true' # Tenta pular aviso do ngrok
+            'Authorization': f'Bearer {TOKEN}'
         }
         
         response = requests.post(URL_ESL, json=payload, headers=headers, timeout=30)
         response.raise_for_status()
         
-        # 5. Sucesso: Atualiza o registro no banco
+        # 5. Sucesso: Atualiza o registro
         baixa.processado_tms = True
         baixa.data_integracao = timezone.now()
-        baixa.log_erro_tms = "Sucesso: Integrado com ESL"
+        baixa.log_erro_tms = "Sucesso: Integrado com ESL via FTP Link"
         baixa.integrado_tms = True
         baixa.save()
 
@@ -430,7 +431,6 @@ def enviar_baixa_esl_task(self, baixa_id):
         return f"Erro: Baixa {baixa_id} não encontrada."
 
     except requests.exceptions.RequestException as exc:
-        # Erro de rede ou API: Salva o log e agenda nova tentativa
         msg_erro = f"Erro API ESL: {str(exc)}"
         if exc.response is not None:
             msg_erro = f"Erro {exc.response.status_code}: {exc.response.text}"
@@ -439,5 +439,4 @@ def enviar_baixa_esl_task(self, baixa_id):
         baixa.integrado_tms = False
         baixa.save()
         
-        # Tenta novamente em 2 minutos (máximo 5 vezes)
         raise self.retry(exc=exc, countdown=120)
