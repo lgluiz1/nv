@@ -15,6 +15,10 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     libjpeg-dev \
     zlib1g-dev \
+    python3-dev \
+    default-libmysqlclient-dev \
+    build-essential \
+    pkg-config \
     # Limpa o cache
     && rm -rf /var/lib/apt/lists/*
 

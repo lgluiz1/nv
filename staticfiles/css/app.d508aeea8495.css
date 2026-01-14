@@ -1,0 +1,100 @@
+
+    :root {
+        --primary-color: #0d6efd;
+    }
+
+    .app-header {
+        height: 65px;
+        border-bottom: 1px solid #eee;
+        z-index: 1030;
+    }
+
+    .brand-area h1 {
+        letter-spacing: -0.5px;
+        line-height: 1;
+    }
+
+    .avatar-circle {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f8f9fa;
+        border-radius: 50%;
+        border: 2px solid #e9ecef;
+    }
+
+    /* Animação suave para o menu lateral */
+    .offcanvas {
+        width: 280px !important;
+    }
+
+    .list-group-item {
+        border: none;
+        font-weight: 500;
+        color: #495057;
+        transition: all 0.2s;
+    }
+
+    .list-group-item:hover {
+        background-color: #f0f7ff;
+        color: var(--primary-color);
+    }
+
+    .list-group-item i {
+        font-size: 1.2rem;
+        vertical-align: middle;
+    }
+
+    :root {
+    --header-bg: #2e7d32; /* Verde escuro da foto */
+    --header-text: #ffffff;
+}
+
+.custom-header {
+    background-color: var(--header-bg);
+    color: var(--header-text);
+    height: 60px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    z-index: 1030;
+}
+
+.btn-header {
+    background: transparent;
+    border: none;
+    color: rgba(255,255,255,0.8);
+    font-size: 1.4rem;
+    padding: 5px;
+    transition: 0.3s;
+}
+
+.btn-header.active {
+    color: #ffffff;
+    border-bottom: 3px solid #ffffff;
+}
+
+.header-title {
+    font-weight: 600;
+    font-size: 1.1rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Container da Busca */
+.search-bar-container {
+    margin-top: 60px; /* Mesma altura do header fixo */
+    padding: 10px 15px;
+    background-color: #f8f9fa;
+}
+
+.search-bar-container .input-group {
+    border-radius: 25px;
+    overflow: hidden;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Ajuste no corpo para não ficar embaixo do header fixo */
+body {
+    padding-top: 10px; /* Compensação extra */
+}
