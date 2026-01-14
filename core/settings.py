@@ -108,7 +108,7 @@ WSGI_APPLICATION = 'core.wsgi.application'
 
 
 # Database
-DATABASES = {
+"""DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.getenv('DB_NAME'),
@@ -116,6 +116,23 @@ DATABASES = {
         'PASSWORD': os.getenv('DB_PASSWORD'),
         'HOST': os.getenv('DB_HOST'),
         'PORT': os.getenv('DB_PORT'),
+    }
+}"""
+
+# MySQL Database Configuration
+# Interserver MySQL Settings
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'st63136_entregas_quickdelivery',
+        'USER': 'st63136_quickdelivery',
+        'PASSWORD': 'Qu1ck.2026',
+        'HOST': 'st63136.ispot.cc',  # 👈 DEVE SER O DOMÍNIO OU IP DA INTERSERVER
+        'PORT': '3306',              # 👈 GARANTA QUE A PORTA ESTÁ DEFINIDA
+        'OPTIONS': {
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            'charset': 'utf8mb4',
+        },
     }
 }
 
