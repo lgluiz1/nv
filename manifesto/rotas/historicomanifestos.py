@@ -65,10 +65,10 @@ class HistoricoManifestosView(views.APIView):
                         ),
 
                         "foto_comprovante": (
-                            baixa.comprovante_foto.url
-                            if baixa and baixa.comprovante_foto
+                            baixa.comprovante_foto_url  # 👈 Use o campo novo que armazena a URL do FTP
+                            if baixa and baixa.comprovante_foto_url 
                             else None
-                        ),
+                        ),  
 
                         "recebedor": (
                             baixa.recebedor
