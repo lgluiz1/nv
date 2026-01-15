@@ -329,6 +329,12 @@ def buscar_manifesto_completo_task(self, log_id):
 
                 # 3. Salvamos a nota SEMPRE (independente de ter detalhes ou não)
                 with transaction.atomic():
+                    # 1. Tenta buscar a nota primeiro
+                    nota_existente = NotaFiscal.objects.filter(chave_acesso=chave).first()
+                    
+                    # 2. Define o status: se já existe, mantém o que está no banco. Se é nova, vira PENDENTE.
+                    status_final = nota_existente.status if nota_existente else 'PENDENTE'
+
                     NotaFiscal.objects.update_or_create(
                         chave_acesso=chave,
                         defaults={
@@ -336,7 +342,7 @@ def buscar_manifesto_completo_task(self, log_id):
                             'numero_nota': str(numero),
                             'destinatario': destinatario,
                             'endereco_entrega': endereco,
-                            'status': 'PENDENTE'
+                            'status': status_final # 👈 Aqui ele preserva o status atual
                         }
                     )
                 
@@ -398,7 +404,10 @@ def buscar_detalhes_esl_interno(chave, numero, token):
 @shared_task(bind=True, max_retries=5)
 def enviar_baixa_esl_task(self, baixa_id):
     """
-    Task unificada: Busca dados e envia a URL direta do FTP para a ESL.
+    Task Inteligente: 
+    1. Ajusta o fuso horário para o registro original.
+    2. Envia foto para 'invoice' se entrega (1 ou 2).
+    3. Envia foto para 'freight' se for outra ocorrência com foto.
     """
     from .models import BaixaNF
     import requests
@@ -408,7 +417,7 @@ def enviar_baixa_esl_task(self, baixa_id):
     URL_ESL = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
     
     try:
-        # 1. Busca os dados com as relações necessárias
+        # 1. Busca os dados
         baixa = BaixaNF.objects.select_related(
             'nota_fiscal', 
             'ocorrencia', 
@@ -417,32 +426,55 @@ def enviar_baixa_esl_task(self, baixa_id):
         
         nf = baixa.nota_fiscal
         motorista = nf.manifesto.motorista.nome_completo
-
-        # 2. Captura a URL direta do campo de texto (FTP link)
-        # Como o campo é CharField/URLField, pegamos o valor direto
         url_foto = baixa.comprovante_foto_url if baixa.comprovante_foto_url else ""
-        
-        # 3. Monta o payload conforme exigência do TMS
+        codigo_ocorrencia = int(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else 1
+
+        # --- AJUSTE DE HORÁRIO ---
+        # Garantimos que a data_baixa seja enviada exatamente como gravada no banco
+        # Formatamos para a string esperada pela ESL
+        data_ocorrencia_str = baixa.data_baixa.strftime('%Y-%m-%dT%H:%M:%S.000-03:00')
+
+        # --- LÓGICA DINÂMICA DE FOTO (INVOICE vs FREIGHT) ---
+        # Se for código 1 (Entregue) ou 2 (Entregue com Ressalva)
+        if codigo_ocorrencia in [1, 2]:
+            invoice_data = {
+                "key": nf.chave_acesso,
+                "delivery_receipt_url": url_foto
+            }
+            freight_data = {} # Vazio para entregas normais
+        else:
+            # Se for ocorrência (ausente, recusado, etc) e TIVER foto
+            invoice_data = {
+                "key": nf.chave_acesso,
+                "delivery_receipt_url": "" # Não vai na NF-e
+            }
+            # A foto vai para o Frete (CT-e)
+            freight_data = {
+                "delivery_receipt_url": url_foto
+            }
+
+        # 3. Monta o payload conforme a regra nova
         payload = {
             "invoice_occurrence": {
                 "receiver": baixa.recebedor or "Nao identificado",
                 "document_number": baixa.documento_recebedor or "",
                 "comments": f"Baixa via App - Motorista: {motorista}. Obs: {baixa.observacao or ''}",
-                "occurrence_at": baixa.data_baixa.strftime('%Y-%m-%dT%H:%M:%S.000-03:00'),
+                "occurrence_at": data_ocorrencia_str, # Horário real da baixa
                 "occurrence": {
-                    "code": int(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else 1
+                    "code": codigo_ocorrencia
                 },
-                "invoice": {
-                    "key": nf.chave_acesso,
-                    "delivery_receipt_url": url_foto  # Link público do FTP
-                },
+                "invoice": invoice_data,
                 "manifest": {
                     "id": nf.manifesto.numero_manifesto
                 }
             }
         }
 
-        # 4. Envio para a ESL (Removido headers de ngrok pois agora é link direto)
+        # Se houver dados de frete (ocorrência com foto), adiciona ao payload
+        if freight_data:
+            payload["invoice_occurrence"]["freight"] = freight_data
+
+        # 4. Envio para a ESL
         headers = {
             'Content-Type': 'application/json', 
             'Authorization': f'Bearer {TOKEN}'
@@ -451,10 +483,10 @@ def enviar_baixa_esl_task(self, baixa_id):
         response = requests.post(URL_ESL, json=payload, headers=headers, timeout=30)
         response.raise_for_status()
         
-        # 5. Sucesso: Atualiza o registro
+        # 5. Sucesso
         baixa.processado_tms = True
         baixa.data_integracao = timezone.now()
-        baixa.log_erro_tms = "Sucesso: Integrado com ESL via FTP Link"
+        baixa.log_erro_tms = "Sucesso: Integrado (Lógica Inteligente de Foto)"
         baixa.integrado_tms = True
         baixa.save()
 
@@ -469,5 +501,4 @@ def enviar_baixa_esl_task(self, baixa_id):
         baixa.log_erro_tms = msg_erro[:500]
         baixa.integrado_tms = False
         baixa.save()
-        
         raise self.retry(exc=exc, countdown=120)
