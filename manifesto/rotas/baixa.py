@@ -78,7 +78,7 @@ class RegistrarBaixaView(APIView):
                 nf.save()
                 
                 # Envia para a fila do Celery para integrar com o ESL
-                enviar_baixa_esl_task.delay(baixa.id)
+                #enviar_baixa_esl_task.delay(baixa.id)
 
             return Response({'status': 'sucesso', 'mensagem': 'Baixa registrada e foto enviada!'})
 

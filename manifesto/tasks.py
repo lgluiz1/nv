@@ -312,22 +312,53 @@ def buscar_manifesto_completo_task(self, log_id):
                 time.sleep(2.1) # Throttling por nota
                 detalhes = buscar_detalhes_esl_interno(chave, numero, token_geral)
                 
+                # 1. Definimos valores padrão caso os detalhes venham vazios
+                destinatario = "DADOS NÃO REPASSADO PELA ESL"
+                endereco = "CONSULTE O DOCUMENTO FÍSICO"
+                
+                # 2. Se houver detalhes, atualizamos com os dados reais
                 if detalhes:
-                    with transaction.atomic():
-                        NotaFiscal.objects.update_or_create(
-                            chave_acesso=chave,
-                            defaults={
-                                'manifesto': manifesto_obj,
-                                'numero_nota': str(numero),
-                                'destinatario': detalhes.get('ioe_rpt_name', 'Não informado'),
-                                'endereco_entrega': f"{detalhes.get('ioe_rpt_mds_line_1', '')} {detalhes.get('ioe_rpt_mds_number') or ''}",
-                                'status': 'PENDENTE'
-                            }
-                        )
-                    total_processadas += 1
-                    logger.info(f"✅ NF {numero} registrada ({total_processadas}/{len(notas_unicas_dict)})")
+                    destinatario = detalhes.get('ioe_rpt_name', destinatario)
+                    destinatario = destinatario.upper()
+                    rua = detalhes.get('ioe_rpt_mds_line_1', '')
+                    num = detalhes.get('ioe_rpt_mds_number', '')
+                    if rua:
+                        endereco = f"{rua} {num}".strip()
+                        #DEIXA MAIUSCULO
+                        endereco = endereco.upper()
+
+                # 3. Salvamos a nota SEMPRE (independente de ter detalhes ou não)
+                with transaction.atomic():
+                    NotaFiscal.objects.update_or_create(
+                        chave_acesso=chave,
+                        defaults={
+                            'manifesto': manifesto_obj,
+                            'numero_nota': str(numero),
+                            'destinatario': destinatario,
+                            'endereco_entrega': endereco,
+                            'status': 'PENDENTE'
+                        }
+                    )
+                
+                total_processadas += 1
+                logger.info(f"✅ NF {numero} processada ({total_processadas}/{len(notas_unicas_dict)})")
+
             except Exception as e:
-                logger.warning(f"⚠️ Erro ao enriquecer nota {numero}: {e}")
+                # Se a FUNÇÃO buscar_detalhes falhar (erro de rede/código), fazemos o fallback
+                logger.warning(f"⚠️ Erro crítico na nota {numero}: {e}")
+                try:
+                    NotaFiscal.objects.get_or_create(
+                        chave_acesso=chave,
+                        defaults={
+                            'manifesto': manifesto_obj,
+                            'numero_nota': str(numero),
+                            'destinatario': "TMS NÃO FORNECEU DADOS",
+                            'endereco_entrega': "CONSULTE O DOCUMENTO FÍSICO",
+                            'status': 'PENDENTE'
+                        }
+                    )
+                except:
+                    pass
                 continue
 
         log.status = 'PROCESSADO'
