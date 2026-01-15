@@ -391,6 +391,27 @@
         </div>
     </div>
 </div>
+<div class="modal fade" id="modalSincronismo" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content text-center p-4">
+            <div class="modal-body" id="modal-sinc-conteudo">
+                <div id="modal-sinc-status">
+                    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+                </div>
+                
+                <h5 class="fw-bold" id="modal-sinc-titulo">Sincronizando Notas</h5>
+                
+                <p class="text-muted" id="modal-sinc-mensagem">Estamos buscando novas notas no sistema da ESL. Por favor, aguarde alguns instantes.</p>
+                
+                <div class="progress mt-3" id="modal-sinc-progresso" style="height: 10px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                </div>
+
+                <button type="button" class="btn btn-secondary mt-3 d-none" id="modal-sinc-btn-fechar" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
 <span id="manifesto-id-display" style="display: none;"></span>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
@@ -443,7 +464,7 @@ async function recarregarPWA() {
 <script src="{% static 'js/serviceworker.js' %}?v=1.3"></script> 
     
     <script src="/static/js/login_motorista/authFetch.js"></script>
-    <script src="{% static 'js/manifesto_v7.js' %}"></script>
+    <script src="{% static 'js/manifesto_v8.js' %}"></script>
     <script src="{% static 'js/historico_v1.js' %}"></script>
 
 </body>
