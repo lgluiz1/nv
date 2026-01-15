@@ -403,6 +403,7 @@ def buscar_detalhes_esl_interno(chave, numero, token):
 
 @shared_task(bind=True, max_retries=5)
 def enviar_baixa_esl_task(self, baixa_id):
+    
     """
     Task Inteligente: 
     1. Ajusta o fuso horário para o registro original.
@@ -412,6 +413,8 @@ def enviar_baixa_esl_task(self, baixa_id):
     from .models import BaixaNF
     import requests
     from django.utils import timezone
+    from datetime import timezone as dt_timezone
+    from datetime import timedelta
     
     TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
     URL_ESL = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
