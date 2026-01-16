@@ -435,7 +435,13 @@ def enviar_baixa_esl_task(self, baixa_id):
         # --- AJUSTE DE HORÁRIO ---
         # Garantimos que a data_baixa seja enviada exatamente como gravada no banco
         # Formatamos para a string esperada pela ESL
-        data_ocorrencia_str = baixa.data_baixa.strftime('%Y-%m-%dT%H:%M:%S.000-03:00')
+        # 1. Pegamos a data do banco (que está em UTC/GMT)
+        data_banco = baixa.data_baixa
+
+        # Garante UTC
+        data_utc = data_banco.astimezone(dt_timezone.utc)
+
+        data_ocorrencia_str = data_utc.strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
         # --- LÓGICA DINÂMICA DE FOTO (INVOICE vs FREIGHT) ---
         # Se for código 1 (Entregue) ou 2 (Entregue com Ressalva)
