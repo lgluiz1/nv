@@ -46,26 +46,41 @@ class RegistrarBaixaView(APIView):
         codigo_tms = request.data.get('ocorrencia_codigo')
         foto_arquivo = request.FILES.get('foto')
         
+        # Este valor vindo do JS é o número visual (ex: 56892)
+        numero_mft = request.data.get('manifesto_id') 
+        
         try:
             with transaction.atomic():
-                nf = NotaFiscal.objects.get(chave_acesso=chave_acesso)
+                # --- BUSCA CORRIGIDA ---
+                # Usamos manifesto__numero_manifesto para buscar pelo número visual que o motorista conhece
+                if numero_mft:
+                    nf = NotaFiscal.objects.get(
+                        chave_acesso=chave_acesso, 
+                        manifesto__numero_manifesto=str(numero_mft) # 👈 O SEGREDO ESTÁ AQUI
+                    )
+                else:
+                    # Fallback caso o JS falhe em enviar o ID
+                    nf = NotaFiscal.objects.get(
+                        chave_acesso=chave_acesso, 
+                        manifesto__motorista__user=request.user,
+                        manifesto__status='EM_TRANSPORTE'
+                    )
+
                 ocorrencia = Ocorrencia.objects.get(codigo_tms=codigo_tms) 
 
                 # --- LÓGICA DE UPLOAD EXTERNO ---
                 url_final_foto = None
                 if foto_arquivo:
-                    # Geramos um nome único baseado na chave de acesso
-                    nome_arquivo = f"{chave_acesso}.jpg"
-                    # Lemos os bytes do arquivo enviado
+                    # Usamos o ID da nota para garantir que a foto de hoje não apague a de ontem no FTP
+                    nome_arquivo = f"{nf.id}_{chave_acesso}.jpg"
                     url_final_foto = upload_via_ftp(foto_arquivo.read(), nome_arquivo)
-                # --------------------------------
 
+                # --- REGISTRO DA BAIXA ---
                 baixa, created = BaixaNF.objects.update_or_create(
                     nota_fiscal=nf,
                     defaults={
                         'tipo': 'ENTREGA' if ocorrencia.tipo == 'ENTREGA' else 'OCORRENCIA',
                         'ocorrencia': ocorrencia,
-                        # Agora salvamos a STRING da URL, não o arquivo
                         'comprovante_foto_url': url_final_foto, 
                         'recebedor': request.data.get('recebedor'),
                         'latitude': request.data.get('latitude'),
@@ -77,11 +92,14 @@ class RegistrarBaixaView(APIView):
                 nf.status = 'BAIXADA' if baixa.tipo == 'ENTREGA' else 'OCORRENCIA'
                 nf.save()
                 
-                # Envia para a fila do Celery para integrar com o ESL
-                enviar_baixa_esl_task.delay(baixa.id)
+                # Descomente para integrar com ESL
+                # enviar_baixa_esl_task.delay(baixa.id)
 
-            return Response({'status': 'sucesso', 'mensagem': 'Baixa registrada e foto enviada!'})
+            return Response({'status': 'sucesso', 'mensagem': 'Baixa registrada com sucesso!'})
 
+        except NotaFiscal.DoesNotExist:
+            # Esse erro agora só dará se o manifesto 56892 realmente não tiver essa nota vinculada no banco
+            return Response({'erro': f'Nota {chave_acesso} não encontrada no manifesto {numero_mft}.'}, status=404)
         except Exception as e:
             print(f"ERRO NA BAIXA: {str(e)}") 
             return Response({'erro': str(e)}, status=400)

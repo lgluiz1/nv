@@ -411,7 +411,7 @@ async function salvarRegistro() {
     // PEGANDO O MANIFESTO DO SEU ESTADO GLOBAL (você já definiu 'manifestoAtual' no topo do arquivo)
     const mID = manifestoAtual || localStorage.getItem('manifesto_ativo');
     // log
-    console.log(mID); // Verifica se o manifesto está sendo capturado corretamente
+    console.log(mID);
 
     // 2. Validação de Foto Obrigatória (Códigos 1 e 2 geralmente são 'Entregue')
     if ((cod === "1" || cod === "2") && !temFoto) {

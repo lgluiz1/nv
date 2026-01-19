@@ -254,9 +254,6 @@ async function atualizarListaViva(numeroManifesto) {
         const notas = await response.json();
         const container = document.getElementById('lista-notas-container');
         const contador = document.getElementById('contador-notas');
-        
-        // Elemento para o botão de refresh (vamos criar um se não existir)
-        let btnRefresh = document.getElementById('btn-refresh-container');
 
         if (container && notas.length > 0) {
             let htmlNotas = '';
@@ -285,29 +282,15 @@ async function atualizarListaViva(numeroManifesto) {
 
             container.innerHTML = htmlNotas;
 
-            // --- BOTÃO DE REFRESH PROFISSIONAL (FAB) ---
-            // Só aparece se a lista for carregada
-            if (!btnRefresh) {
-                btnRefresh = document.createElement('div');
-                btnRefresh.id = 'btn-refresh-container';
-                // Estilo para ficar flutuando no canto inferior
-                btnRefresh.innerHTML = `
-                    <button onclick="iniciarSincronismo('${numeroManifesto}')" 
-                            class="btn btn-primary shadow-lg animate__animated animate__bounceIn" 
-                            style="position: fixed; bottom: 80px; right: 20px; width: 60px; height: 60px; border-radius: 50%; z-index: 1050; display: flex; align-items: center; justify-content: center;">
-                        <i class="bi bi-arrow-clockwise fs-3"></i>
-                    </button>
-                `;
-                document.body.appendChild(btnRefresh);
-            }
-
             // --- LÓGICA DE CONTADORES DINÂMICOS ---
             if (contador) {
+                // Criamos o HTML dos dois contadores juntos
                 let htmlContadores = `
                     <div class="d-flex gap-2">
                         <span class="badge bg-secondary p-2">${notas.length} Notas no Manifesto</span>
                 `;
 
+                // Só adiciona o badge verde se houver notas finalizadas
                 if (totalFinalizadas > 0) {
                     htmlContadores += `
                         <span class="badge bg-success p-2 animate__animated animate__bounceIn">
@@ -315,19 +298,23 @@ async function atualizarListaViva(numeroManifesto) {
                         </span>
                     `;
                 }
-                
-                // ... (seu código de KM Final permanece igual)
                 if (notas.length > 0 && totalFinalizadas === notas.length) {
                     const modalKM = new bootstrap.Modal(document.getElementById('kmFinalModal'));
-                    setTimeout(() => { modalKM.show(); }, 800);
+                    // Pequeno delay para garantir que a última nota apareça na tela antes do modal abrir
+                    setTimeout(() => {
+                        modalKM.show();
+                    }, 800);
                 }
 
                 htmlContadores += `</div>`;
+
+                // Injeta os badges no elemento de contador
                 contador.innerHTML = htmlContadores;
             }
         }
     } catch (err) { console.error("Erro na atualização viva:", err); }
 }
+
 // =====================================================
 // FUNÇÕES DE INTERFACE (MODALS E SEARCH)
 // =====================================================
@@ -408,10 +395,6 @@ async function salvarRegistro() {
     const cod = selectOcorrencia.value;
     const chaveNF = inputChave.value;
     const temFoto = (canvas.style.display === 'block');
-    // PEGANDO O MANIFESTO DO SEU ESTADO GLOBAL (você já definiu 'manifestoAtual' no topo do arquivo)
-    const mID = manifestoAtual || localStorage.getItem('manifesto_ativo');
-    // log
-    console.log(mID); // Verifica se o manifesto está sendo capturado corretamente
 
     // 2. Validação de Foto Obrigatória (Códigos 1 e 2 geralmente são 'Entregue')
     if ((cod === "1" || cod === "2") && !temFoto) {
@@ -432,7 +415,6 @@ async function salvarRegistro() {
     const formData = new FormData();
     formData.append('ocorrencia_codigo', cod);
     formData.append('chave_acesso', chaveNF);
-    formData.append('manifesto_id', mID); // 👈 ADICIONADO: Envia o manifesto do contexto atual
     formData.append('recebedor', inputRecebedor.value || '');
 
     // 5. Captura de Coordenadas GPS
@@ -450,15 +432,14 @@ async function salvarRegistro() {
     // 6. Conversão do Canvas para Imagem (Blob)
     if (temFoto) {
         const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.85));
-        // 👈 AJUSTE NO NOME: manifesto + chave para não apagar a foto da entrega de ontem no FTP
-        formData.append('foto', blob, `mft_${mID}_${chaveNF}.jpg`);
+        formData.append('foto', blob, `${chaveNF}.jpg`);
     }
 
     // 7. Envio para o Backend
     try {
         const response = await authFetch(`${API_BASE}manifesto/registrar-baixa/`, {
             method: 'POST',
-            body: formData // O backend agora recebe o manifesto_id e a chave
+            body: formData
         });
 
         const data = await response.json();
@@ -594,59 +575,6 @@ async function carregarDadosCabecalho() {
         }
     } catch (error) {
         console.error("Erro ao buscar dados do motorista:", error);
-    }
-}
-async function iniciarSincronismo(numeroManifesto) {
-    const modalElement = document.getElementById('modalSincronismo');
-    const modalSinc = new bootstrap.Modal(modalElement);
-    
-    // Elementos internos do modal
-    const elStatus = document.getElementById('modal-sinc-status');
-    const elTitulo = document.getElementById('modal-sinc-titulo');
-    const elMensagem = document.getElementById('modal-sinc-mensagem');
-    const elProgresso = document.getElementById('modal-sinc-progresso');
-    const elBtnFechar = document.getElementById('modal-sinc-btn-fechar');
-
-    // Resetar modal para estado inicial (Carregando)
-    elStatus.innerHTML = '<div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>';
-    elTitulo.innerText = "Sincronizando Notas";
-    elMensagem.innerText = "Estamos buscando novas notas no sistema da ESL. Por favor, aguarde alguns instantes.";
-    elProgresso.classList.remove('d-none');
-    elBtnFechar.classList.add('d-none');
-
-    modalSinc.show();
-
-    try {
-        // Importante: use o authFetch para garantir que o Token seja enviado!
-        const response = await authFetch(`${API_BASE}manifesto/sincronizar/`, {
-            method: 'POST',
-            body: JSON.stringify({ numero_manifesto: numeroManifesto })
-        });
-
-        if (response && response.ok) {
-            // Sucesso
-            setTimeout(() => {
-                elStatus.innerHTML = '<i class="bi bi-check-circle-fill text-success" style="font-size: 3rem;"></i>';
-                elTitulo.innerText = "Sucesso!";
-                elMensagem.innerText = "Notas sincronizadas. A página será atualizada.";
-                elProgresso.classList.add('d-none');
-                
-                setTimeout(() => {
-                    modalSinc.hide();
-                    window.location.reload();
-                }, 2000);
-            }, 5000); // Aguarda um pouco para a task começar
-        } else {
-            // Erro de Resposta (401, 404, 500...)
-            throw new Error(response.status === 401 ? "Sessão expirada. Faça login novamente." : "Falha na comunicação com o servidor.");
-        }
-    } catch (error) {
-        // Exibe o erro dentro do Modal em vez de Alert
-        elStatus.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 3rem;"></i>';
-        elTitulo.innerText = "Erro na Sincronização";
-        elMensagem.innerHTML = `<span class="text-danger">${error.message}</span>`;
-        elProgresso.classList.add('d-none');
-        elBtnFechar.classList.remove('d-none'); // Deixa o motorista fechar o modal
     }
 }
 

@@ -408,10 +408,6 @@ async function salvarRegistro() {
     const cod = selectOcorrencia.value;
     const chaveNF = inputChave.value;
     const temFoto = (canvas.style.display === 'block');
-    // PEGANDO O MANIFESTO DO SEU ESTADO GLOBAL (você já definiu 'manifestoAtual' no topo do arquivo)
-    const mID = manifestoAtual || localStorage.getItem('manifesto_ativo');
-    // log
-    console.log(mID); // Verifica se o manifesto está sendo capturado corretamente
 
     // 2. Validação de Foto Obrigatória (Códigos 1 e 2 geralmente são 'Entregue')
     if ((cod === "1" || cod === "2") && !temFoto) {
@@ -432,7 +428,6 @@ async function salvarRegistro() {
     const formData = new FormData();
     formData.append('ocorrencia_codigo', cod);
     formData.append('chave_acesso', chaveNF);
-    formData.append('manifesto_id', mID); // 👈 ADICIONADO: Envia o manifesto do contexto atual
     formData.append('recebedor', inputRecebedor.value || '');
 
     // 5. Captura de Coordenadas GPS
@@ -450,15 +445,14 @@ async function salvarRegistro() {
     // 6. Conversão do Canvas para Imagem (Blob)
     if (temFoto) {
         const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.85));
-        // 👈 AJUSTE NO NOME: manifesto + chave para não apagar a foto da entrega de ontem no FTP
-        formData.append('foto', blob, `mft_${mID}_${chaveNF}.jpg`);
+        formData.append('foto', blob, `${chaveNF}.jpg`);
     }
 
     // 7. Envio para o Backend
     try {
         const response = await authFetch(`${API_BASE}manifesto/registrar-baixa/`, {
             method: 'POST',
-            body: formData // O backend agora recebe o manifesto_id e a chave
+            body: formData
         });
 
         const data = await response.json();
@@ -597,56 +591,34 @@ async function carregarDadosCabecalho() {
     }
 }
 async function iniciarSincronismo(numeroManifesto) {
+    // 1. Abre o modal
     const modalElement = document.getElementById('modalSincronismo');
     const modalSinc = new bootstrap.Modal(modalElement);
-    
-    // Elementos internos do modal
-    const elStatus = document.getElementById('modal-sinc-status');
-    const elTitulo = document.getElementById('modal-sinc-titulo');
-    const elMensagem = document.getElementById('modal-sinc-mensagem');
-    const elProgresso = document.getElementById('modal-sinc-progresso');
-    const elBtnFechar = document.getElementById('modal-sinc-btn-fechar');
-
-    // Resetar modal para estado inicial (Carregando)
-    elStatus.innerHTML = '<div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>';
-    elTitulo.innerText = "Sincronizando Notas";
-    elMensagem.innerText = "Estamos buscando novas notas no sistema da ESL. Por favor, aguarde alguns instantes.";
-    elProgresso.classList.remove('d-none');
-    elBtnFechar.classList.add('d-none');
-
     modalSinc.show();
 
     try {
-        // Importante: use o authFetch para garantir que o Token seja enviado!
-        const response = await authFetch(`${API_BASE}manifesto/sincronizar/`, {
+        // 2. Chama a View que dispara a Task
+        const response = await fetch('/api/manifesto/sincronizar/', {
             method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+            },
             body: JSON.stringify({ numero_manifesto: numeroManifesto })
         });
 
-        if (response && response.ok) {
-            // Sucesso
+        if (response.ok) {
+            // 3. Aguarda 10 segundos (tempo médio para a Task processar algumas notas novas)
             setTimeout(() => {
-                elStatus.innerHTML = '<i class="bi bi-check-circle-fill text-success" style="font-size: 3rem;"></i>';
-                elTitulo.innerText = "Sucesso!";
-                elMensagem.innerText = "Notas sincronizadas. A página será atualizada.";
-                elProgresso.classList.add('d-none');
-                
-                setTimeout(() => {
-                    modalSinc.hide();
-                    window.location.reload();
-                }, 2000);
-            }, 5000); // Aguarda um pouco para a task começar
+                modalSinc.hide();
+                window.location.reload(); // Recarrega para mostrar as novas notas
+            }, 10000);
         } else {
-            // Erro de Resposta (401, 404, 500...)
-            throw new Error(response.status === 401 ? "Sessão expirada. Faça login novamente." : "Falha na comunicação com o servidor.");
+            throw new Error('Falha na comunicação com o servidor');
         }
     } catch (error) {
-        // Exibe o erro dentro do Modal em vez de Alert
-        elStatus.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 3rem;"></i>';
-        elTitulo.innerText = "Erro na Sincronização";
-        elMensagem.innerHTML = `<span class="text-danger">${error.message}</span>`;
-        elProgresso.classList.add('d-none');
-        elBtnFechar.classList.remove('d-none'); // Deixa o motorista fechar o modal
+        modalSinc.hide();
+        alert('Erro ao sincronizar: ' + error.message);
     }
 }
 

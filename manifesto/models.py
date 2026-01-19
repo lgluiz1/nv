@@ -119,7 +119,7 @@ class NotaFiscal(models.Model):
     manifesto = models.ForeignKey(Manifesto, on_delete=models.CASCADE, related_name='notas_fiscais')
     
     # Chave de acesso e Número não são únicos globalmente, mas são únicos DENTRO DESTE MANIFESTO
-    chave_acesso = models.CharField(max_length=44, null=True, unique=True, blank=True, verbose_name="Chave de Acesso") 
+    chave_acesso = models.CharField(max_length=44, null=True, blank=True, verbose_name="Chave de Acesso") 
     numero_nota = models.CharField(max_length=20, verbose_name="Número NF")
     
     destinatario = models.CharField(max_length=255, verbose_name="Destinatário")
@@ -172,7 +172,7 @@ class BaixaNF(models.Model):
     """
     Registra a foto do canhoto ou o código da ocorrência FINAL enviado pelo motorista.
     """
-    nota_fiscal = models.OneToOneField(NotaFiscal, on_delete=models.CASCADE, related_name='baixa_info')
+    nota_fiscal = models.ForeignKey(NotaFiscal, on_delete=models.CASCADE, related_name='baixa_info')
     
     TIPO_CHOICES = [
         ('ENTREGA', 'Entrega/Coleta'),

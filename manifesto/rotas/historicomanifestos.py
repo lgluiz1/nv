@@ -12,7 +12,6 @@ class HistoricoManifestosView(views.APIView):
 
     def get(self, request):
         try:
-            # 🔹 Manifestos finalizados do motorista logado
             manifestos = (
                 Manifesto.objects
                 .filter(
@@ -33,29 +32,28 @@ class HistoricoManifestosView(views.APIView):
                 dados_notas = []
 
                 for nota in notas:
-                    baixa = getattr(nota, 'baixa_info', None)
+                    # ✅ CORREÇÃO: Pegamos a última baixa vinculada a esta nota fiscal
+                    # Como agora é ForeignKey, usamos .last() para pegar o registro mais recente
+                    baixa = nota.baixa_info.all().last() 
 
-                    # ✅ Última ocorrência registrada no TMS
                     ultima_ocorrencia = (
                         nota.historico
                         .order_by('-data_ocorrencia')
                         .first()
                     )
 
-                    # 🔹 Tipo da ocorrência (prioridade: Baixa > Histórico)
+                    # Tipo da ocorrência
                     if baixa and baixa.ocorrencia:
                         tipo_ocorrencia = baixa.ocorrencia.descricao
                     elif ultima_ocorrencia:
-                        tipo_ocorrencia = ultima_ocorrencia.codigo_tms
+                        tipo_ocorrencia = f"TMS: {ultima_ocorrencia.codigo_tms}"
                     else:
                         tipo_ocorrencia = "Entregue"
 
                     dados_notas.append({
                         "numero_nf": nota.numero_nota,
                         "status_nf": nota.status,
-
                         "tipo_ocorrencia": tipo_ocorrencia,
-
                         "descricao_detalhada": (
                             baixa.observacao
                             if baixa and baixa.observacao
@@ -63,19 +61,16 @@ class HistoricoManifestosView(views.APIView):
                             if ultima_ocorrencia and ultima_ocorrencia.comentarios
                             else "Sem observações."
                         ),
-
                         "foto_comprovante": (
-                            baixa.comprovante_foto_url  # 👈 Use o campo novo que armazena a URL do FTP
+                            baixa.comprovante_foto_url 
                             if baixa and baixa.comprovante_foto_url 
                             else None
                         ),  
-
                         "recebedor": (
                             baixa.recebedor
                             if baixa and baixa.recebedor
                             else "Não informado"
                         ),
-
                         "data_baixa": (
                             baixa.data_baixa.strftime('%d/%m/%Y %H:%M')
                             if baixa

@@ -249,27 +249,23 @@ def buscar_manifesto_completo_task(self, log_id):
             log.status, log.mensagem_erro = 'ERRO', "Manifesto não pertence ao seu CPF."
             log.save(); return
 
-        # Criar Manifesto Local
+        # Criar/Recuperar Manifesto Local
         manifesto_obj, _ = Manifesto.objects.get_or_create(
             numero_manifesto=numero_visual,
             defaults={'motorista': motorista, 'status': 'EM_TRANSPORTE'}
         )
         
-        # ID Interno para as ocorrências (importante para a Etapa 2)
         id_interno_esl = dados_mft[0].get('id') or numero_visual
         log.status = 'ENRIQUECENDO'
         log.save()
 
-        # --- ETAPA 2: CAPTURAR LISTA DE NOTAS (LOGICA DE PAGINAÇÃO POR CURSOR) ---
-        # Implementando exatamente a lógica que você validou
+        # --- ETAPA 2: CAPTURAR LISTA DE NOTAS ---
         token_notas = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
         url_notas = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
         
         params_notas = {"manifest_id": str(id_interno_esl), "per": 20}
         start_cursor = None
-        notas_unicas_dict = {} # Usamos dict para guardar a key e o number para a etapa 3
-
-        logger.info(f"🚀 Iniciando busca de notas para o Manifesto {numero_visual} (ID: {id_interno_esl})")
+        notas_unicas_dict = {}
 
         while True:
             if start_cursor:
@@ -278,103 +274,89 @@ def buscar_manifesto_completo_task(self, log_id):
                 params_notas.pop("start", None)
 
             res_n = requests.get(url_notas, headers={"Authorization": f"Bearer {token_notas}"}, params=params_notas, timeout=30)
-            
-            if res_n.status_code != 200:
-                logger.error(f"❌ Erro na paginação: {res_n.status_code}")
-                break
+            if res_n.status_code != 200: break
 
             data_n = res_n.json()
             registros = data_n.get("data", [])
             paging = data_n.get("paging", {})
 
-            logger.info(f"📦 Página capturada: {len(registros)} ocorrências encontradas.")
-
             for item in registros:
                 invoice = item.get("invoice")
                 if invoice and invoice.get("key"):
-                    # Armazena a chave e o número para enriquecer na etapa 3
                     notas_unicas_dict[invoice["key"]] = invoice["number"]
 
-            logger.info(f"🧾 Total de notas únicas até agora: {len(notas_unicas_dict)}")
-
-            # Checa se há próxima página
-            if paging.get("next_id") is None:
-                logger.info("✅ Fim da paginação de notas.")
-                break
-
+            if paging.get("next_id") is None: break
             start_cursor = paging["next_id"]
-            time.sleep(2.3) # Delay de segurança exigido pela ESL
+            time.sleep(2.3)
 
-        # --- ETAPA 3: ENRIQUECIMENTO NOTA A NOTA ---
+        # --- ETAPA 3: ENRIQUECIMENTO NOTA A NOTA (LÓGICA DE REENTREGA) ---
         total_processadas = 0
         for chave, numero in notas_unicas_dict.items():
             try:
-                time.sleep(2.1) # Throttling por nota
+                time.sleep(2.1)
                 detalhes = buscar_detalhes_esl_interno(chave, numero, token_geral)
                 
-                # 1. Definimos valores padrão caso os detalhes venham vazios
-                destinatario = "DADOS NÃO REPASSADO PELA ESL"
+                destinatario = "DADOS NÃO REPASSADOS PELA ESL"
                 endereco = "CONSULTE O DOCUMENTO FÍSICO"
                 
-                # 2. Se houver detalhes, atualizamos com os dados reais
                 if detalhes:
-                    destinatario = detalhes.get('ioe_rpt_name', destinatario)
-                    destinatario = destinatario.upper()
+                    nome_det = detalhes.get('ioe_rpt_name')
+                    if nome_det: destinatario = str(nome_det).upper()
+                    
                     rua = detalhes.get('ioe_rpt_mds_line_1', '')
                     num = detalhes.get('ioe_rpt_mds_number', '')
                     if rua:
-                        endereco = f"{rua} {num}".strip()
-                        #DEIXA MAIUSCULO
-                        endereco = endereco.upper()
+                        endereco = f"{rua} {num}".strip().upper()
 
-                # 3. Salvamos a nota SEMPRE (independente de ter detalhes ou não)
                 with transaction.atomic():
-                    # 1. Tenta buscar a nota primeiro
-                    nota_existente = NotaFiscal.objects.filter(chave_acesso=chave).first()
+                    # 1. Tenta buscar a nota vinculada ESPECIFICAMENTE a este manifesto
+                    # Isso garante que se a nota existiu em outro manifesto antigo, não mexe nela lá.
+                    nota_no_manifesto = NotaFiscal.objects.filter(
+                        manifesto=manifesto_obj, 
+                        chave_acesso=chave
+                    ).first()
                     
-                    # 2. Define o status: se já existe, mantém o que está no banco. Se é nova, vira PENDENTE.
-                    status_final = nota_existente.status if nota_existente else 'PENDENTE'
+                    # 2. Define o status final:
+                    # Se já existia neste manifesto (refresh), mantém o status que está (ex: BAIXADA).
+                    # Se é a primeira vez que entra neste manifesto, vira PENDENTE.
+                    status_final = nota_no_manifesto.status if nota_no_manifesto else 'PENDENTE'
 
+                    # 3. Salva usando a composição (Manifesto + Chave)
                     NotaFiscal.objects.update_or_create(
+                        manifesto=manifesto_obj,
                         chave_acesso=chave,
                         defaults={
-                            'manifesto': manifesto_obj,
                             'numero_nota': str(numero),
                             'destinatario': destinatario,
                             'endereco_entrega': endereco,
-                            'status': status_final # 👈 Aqui ele preserva o status atual
+                            'status': status_final
                         }
                     )
                 
                 total_processadas += 1
-                logger.info(f"✅ NF {numero} processada ({total_processadas}/{len(notas_unicas_dict)})")
+                logger.info(f"✅ NF {numero} processada no Manifesto {numero_visual}")
 
             except Exception as e:
-                # Se a FUNÇÃO buscar_detalhes falhar (erro de rede/código), fazemos o fallback
-                logger.warning(f"⚠️ Erro crítico na nota {numero}: {e}")
-                try:
-                    NotaFiscal.objects.get_or_create(
-                        chave_acesso=chave,
-                        defaults={
-                            'manifesto': manifesto_obj,
-                            'numero_nota': str(numero),
-                            'destinatario': "TMS NÃO FORNECEU DADOS",
-                            'endereco_entrega': "CONSULTE O DOCUMENTO FÍSICO",
-                            'status': 'PENDENTE'
-                        }
-                    )
-                except:
-                    pass
+                logger.warning(f"⚠️ Erro nota {numero}: {e}")
+                # Fallback seguro vinculando ao manifesto atual
+                NotaFiscal.objects.get_or_create(
+                    manifesto=manifesto_obj,
+                    chave_acesso=chave,
+                    defaults={
+                        'numero_nota': str(numero),
+                        'destinatario': "ERRO AO BUSCAR DADOS",
+                        'endereco_entrega': "CONSULTE DOCUMENTO FÍSICO",
+                        'status': 'PENDENTE'
+                    }
+                )
                 continue
 
         log.status = 'PROCESSADO'
         log.save()
-        # 🔁 DISPARA TASK DE INÍCIO DE TRANSPORTE NO TMS
-        #iniciar_transporte_manifesto_tms_task.delay(numero_visual)
         return f"Manifesto {numero_visual} finalizado com {total_processadas} notas."
 
     except Exception as e:
-        logger.error(f"🔴 Erro crítico na task: {str(e)}")
+        logger.error(f"🔴 Erro crítico: {str(e)}")
         log.status, log.mensagem_erro = 'ERRO', str(e)
         log.save()
         raise self.retry(exc=e, countdown=60)

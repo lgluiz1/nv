@@ -13,6 +13,7 @@ urlpatterns = [
     path('auth/', include(('usuarios.urls', 'usuarios'), namespace='usuarios')),
     path('api/', include(('manifesto.urls', 'manifesto'), namespace='manifesto')),
     path('app/', include(('mobile.urls', 'mobile'), namespace='mobile')),
+    path('', include(('operacional.urls', 'operacional'), namespace='operacional')),
     # Whatsapp Bot URLs
     #path('botwhatsapp/', include(('botWhatsapp.urls', 'botWhatsapp'), namespace='botWhatsapp')),
     path('', include('pwa.urls')),

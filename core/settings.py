@@ -44,11 +44,13 @@ INSTALLED_APPS = [
     'corsheaders',
     'channels',
     'pwa',
+
     
     # Nossas Apps
     'usuarios',
     'manifesto',   # CORREÇÃO: Deve ser 'manifestos' (plural)
     'mobile',
+    'operacional',
 ]
 # Configurar Redis como channel layer
 # settings.py ou celery.py
@@ -124,8 +126,8 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'st63136_entregas_quickdelivery',
-        'USER': 'st63136_quickdelivery',
+        'NAME': 'st63136_dev_app_transportadora',
+        'USER': 'st63136_dev_app_transportadora',
         'PASSWORD': 'Qu1ck.2026',
         'HOST': 'st63136.ispot.cc',  # 👈 DEVE SER O DOMÍNIO OU IP DA INTERSERVER
         'PORT': '3306',              # 👈 GARANTA QUE A PORTA ESTÁ DEFINIDA

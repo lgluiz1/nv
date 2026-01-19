@@ -12,24 +12,38 @@ from .serializers import (
     ManifestoBuscaSerializer, ManifestoSerializer, 
     BaixaNFCreateSerializer, OcorrenciaSerializer
 )
+from .tasks import buscar_manifesto_completo_task
 
-
-class ManifestoFinalizacaoView(views.APIView):
+class ManifestoFinalizacaoView(APIView):
     def post(self, request):
         km_final = request.data.get('km_final')
-        manifesto_id = request.data.get('manifesto_id') # Recebe o ID do JS
+        # Recebe o número visual (ex: 56892) vindo do seu JS
+        numero_mft = request.data.get('manifesto_id') 
 
-        if not manifesto_id:
-            return Response({"mensagem": "ID do manifesto não fornecido."}, status=400)
+        if not numero_mft:
+            return Response({"mensagem": "Número do manifesto não fornecido."}, status=400)
 
         try:
-            # Agora buscamos pelo ID exato
-            manifesto = Manifesto.objects.get(numero_manifesto=manifesto_id)
+            # Buscamos o manifesto pelo número visual
+            manifesto = Manifesto.objects.get(numero_manifesto=str(numero_mft))
             
-            # Validação extra: garantir que não está finalizado
             if manifesto.finalizado:
                 return Response({"mensagem": "Este manifesto já foi encerrado."}, status=400)
 
+            # --- TRAVA DE SEGURANÇA: CONFERÊNCIA DE NOTAS PENDENTES ---
+            # Verificamos se existe alguma nota deste manifesto que ainda não foi baixada
+            notas_pendentes = NotaFiscal.objects.filter(
+                manifesto=manifesto, 
+                status='PENDENTE'
+            ).count()
+
+            if notas_pendentes > 0:
+                return Response({
+                    "mensagem": f"Não é possível finalizar. Existem {notas_pendentes} notas pendentes de baixa."
+                }, status=400)
+            # ---------------------------------------------------------
+
+            # Se todas as notas foram baixadas (Sucesso ou Ocorrência), finaliza
             manifesto.km_final = km_final
             manifesto.finalizado = True
             manifesto.status = "FINALIZADO"
@@ -40,6 +54,34 @@ class ManifestoFinalizacaoView(views.APIView):
 
         except Manifesto.DoesNotExist:
             return Response({"mensagem": "Manifesto não encontrado."}, status=404)
+        except Exception as e:
+            return Response({"mensagem": f"Erro interno: {str(e)}"}, status=500)
+
+class AtualizarManifestoView(views.APIView):
+    # Reutiliza sua autenticação JWT
+    
+    def post(self, request):
+        numero_manifesto = request.data.get('numero_manifesto')
+        motorista = request.user.motorista_profile # Ajuste conforme seu modelo
+
+        if not numero_manifesto:
+            return Response({"erro": "Número do manifesto é obrigatório"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. Criamos um log de busca marcado como 'ATUALIZACAO'
+        log = ManifestoBuscaLog.objects.create(
+            motorista=motorista,
+            numero_manifesto=numero_manifesto,
+            status='PENDENTE'
+        )
+
+        # 2. Chamamos a mesma Task que você já tem
+        # Ela vai percorrer a API da ESL e adicionar o que estiver faltando
+        buscar_manifesto_completo_task.delay(log.id)
+
+        return Response({
+            "mensagem": "Sincronização iniciada. As novas notas aparecerão em instantes.",
+            "log_id": log.id
+        }, status=status.HTTP_202_ACCEPTED)
 
 class OcorrenciaListView(generics.ListAPIView):
     """

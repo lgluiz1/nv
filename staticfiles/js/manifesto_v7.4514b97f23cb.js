@@ -408,10 +408,6 @@ async function salvarRegistro() {
     const cod = selectOcorrencia.value;
     const chaveNF = inputChave.value;
     const temFoto = (canvas.style.display === 'block');
-    // PEGANDO O MANIFESTO DO SEU ESTADO GLOBAL (você já definiu 'manifestoAtual' no topo do arquivo)
-    const mID = manifestoAtual || localStorage.getItem('manifesto_ativo');
-    // log
-    console.log(mID); // Verifica se o manifesto está sendo capturado corretamente
 
     // 2. Validação de Foto Obrigatória (Códigos 1 e 2 geralmente são 'Entregue')
     if ((cod === "1" || cod === "2") && !temFoto) {
@@ -432,7 +428,6 @@ async function salvarRegistro() {
     const formData = new FormData();
     formData.append('ocorrencia_codigo', cod);
     formData.append('chave_acesso', chaveNF);
-    formData.append('manifesto_id', mID); // 👈 ADICIONADO: Envia o manifesto do contexto atual
     formData.append('recebedor', inputRecebedor.value || '');
 
     // 5. Captura de Coordenadas GPS
@@ -450,15 +445,14 @@ async function salvarRegistro() {
     // 6. Conversão do Canvas para Imagem (Blob)
     if (temFoto) {
         const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.85));
-        // 👈 AJUSTE NO NOME: manifesto + chave para não apagar a foto da entrega de ontem no FTP
-        formData.append('foto', blob, `mft_${mID}_${chaveNF}.jpg`);
+        formData.append('foto', blob, `${chaveNF}.jpg`);
     }
 
     // 7. Envio para o Backend
     try {
         const response = await authFetch(`${API_BASE}manifesto/registrar-baixa/`, {
             method: 'POST',
-            body: formData // O backend agora recebe o manifesto_id e a chave
+            body: formData
         });
 
         const data = await response.json();
