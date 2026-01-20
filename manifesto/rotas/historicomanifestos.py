@@ -12,8 +12,7 @@ class HistoricoManifestosView(views.APIView):
 
     def get(self, request):
         try:
-            # 1. Filtramos apenas manifestos finalizados do motorista logado
-            # Usamos prefetch_related com objetos específicos para otimizar a busca
+            # Buscamos manifestos finalizados com prefetch profundo para evitar TIMEOUT
             manifestos = (
                 Manifesto.objects
                 .filter(motorista__user=request.user, finalizado=True)
@@ -21,22 +20,25 @@ class HistoricoManifestosView(views.APIView):
                 .prefetch_related(
                     'notas_fiscais',
                     'notas_fiscais__historico',
-                    'notas_fiscais__baixa_info__ocorrencia'
+                    'notas_fiscais__baixa_info__ocorrencia' # ForeignKey agora
                 )
             )
 
             dados = []
             for manifesto in manifestos:
                 dados_notas = []
-                # 2. notas_fiscais.all() aqui já está no cache do prefetch_related
+                
                 for nota in manifesto.notas_fiscais.all():
-                    
-                    # Pegamos a baixa específica deste registro de NotaFiscal
-                    # Como nota e baixa_info estão ligados por FK, o .last() pega a última deste registro
-                    baixa = nota.baixa_info.all().last() 
+                    # ✅ ACESSO SEGURO AO CACHE (ForeignKey)
+                    # Transformamos em lista para pegar o último registro sem nova consulta SQL
+                    baixas_list = list(nota.baixa_info.all())
+                    baixa = baixas_list[-1] if baixas_list else None
 
-                    # Pegamos o histórico de rastreamento (TMS)
-                    ultima_ocorrencia = nota.historico.all().order_by('-data_ocorrencia').first()
+                    # ✅ ACESSO SEGURO AO HISTÓRICO (TMS)
+                    historicos = list(nota.historico.all())
+                    # Ordenamos em memória para garantir a data mais recente
+                    historicos.sort(key=lambda x: x.data_ocorrencia if x.data_ocorrencia else timezone.now(), reverse=True)
+                    ultima_ocorrencia = historicos[0] if historicos else None
 
                     # Lógica de prioridade de Status
                     if baixa and baixa.ocorrencia:
@@ -73,4 +75,6 @@ class HistoricoManifestosView(views.APIView):
             return Response(dados)
 
         except Exception as e:
-            return Response({"erro": f"Erro ao carregar histórico: {str(e)}"}, status=500)
+            # Log de erro detalhado para você ver no 'docker logs' da VPS
+            print(f"ERRO CRÍTICO NO HISTÓRICO: {str(e)}")
+            return Response({"erro": "Erro interno ao carregar histórico."}, status=500)
