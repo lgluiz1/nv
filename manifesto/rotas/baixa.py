@@ -93,7 +93,7 @@ class RegistrarBaixaView(APIView):
                 nf.save()
                 
                 # Descomente para integrar com ESL
-                # enviar_baixa_esl_task.delay(baixa.id)
+                enviar_baixa_esl_task.delay(baixa.id)
 
             return Response({'status': 'sucesso', 'mensagem': 'Baixa registrada com sucesso!'})
 
