@@ -1,0 +1,227 @@
+{% extends "desktop/base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="fw-bold">Monitoramento de NF-e</h3>
+        <div class="d-flex gap-2">
+            <input type="text" class="form-control" placeholder="Buscar NF ou Chave..." id="buscaNota">
+            <button class="btn btn-primary"><i class="bi bi-search"></i></button>
+        </div>
+    </div>
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form method="GET" action="." class="row g-3">
+            <div class="col-md-3">
+                <label class="small fw-bold text-muted">NF-e ou Chave</label>
+                <input type="text" name="q" class="form-control form-control-sm" placeholder="Ex: 5564" value="{{ request.GET.q }}">
+            </div>
+            
+            <div class="col-md-2">
+                <label class="small fw-bold text-muted">Motorista</label>
+                <input type="text" name="motorista" class="form-control form-control-sm" placeholder="Nome..." value="{{ request.GET.motorista }}">
+            </div>
+
+            <div class="col-md-2">
+                <label class="small fw-bold text-muted">Nº Manifesto</label>
+                <input type="text" name="manifesto" class="form-control form-control-sm" placeholder="Ex: 988" value="{{ request.GET.manifesto }}">
+            </div>
+
+            <div class="col-md-2">
+                <label class="small fw-bold text-muted">Status Integração</label>
+                <select name="integrado" class="form-select form-select-sm">
+                    <option value="">Todos</option>
+                    <option value="sim" {% if request.GET.integrado == 'sim' %}selected{% endif %}>Integrado</option>
+                    <option value="nao" {% if request.GET.integrado == 'nao' %}selected{% endif %}>Pendente/Erro</option>
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <label class="small fw-bold text-muted">Data</label>
+                <input type="date" name="data_inicio" class="form-control form-control-sm" value="{{ request.GET.data_inicio }}">
+            </div>
+
+            <div class="col-md-1 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-filter"></i></button>
+            </div>
+        </form>
+    </div>
+</div>
+    <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>NF-e / Chave</th>
+                        <th>Manifesto / Motorista</th>
+                        <th>Status Atual</th>
+                        <th>Integração TMS</th>
+                        <th class="text-center">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for nota in notas %}
+                    {% with ultima_baixa=nota.baixa_info.all.last %}
+                    <tr>
+                        <td>
+                            <span class="fw-bold text-primary">{{ nota.numero_nota }}</span>
+                            <br><small class="text-muted" style="font-size: 0.7rem;">{{ nota.chave_acesso|truncatechars:20 }}</small>
+                        </td>
+                        <td>
+                            <span class="small fw-bold">#{{ nota.manifesto.numero_manifesto }}</span>
+                            <br><small class="text-muted">{{ nota.manifesto.motorista.nome_completo|default:"Não atribuído" }}</small>
+                        </td>
+                        <td>
+                            {% if nota.status == 'BAIXADA' %}
+                                <span class="badge bg-success">Entregue</span>
+                            {% elif nota.status == 'OCORRENCIA' %}
+                                <span class="badge bg-danger">{{ ultima_baixa.ocorrencia.descricao|default:"Ocorrência" }}</span>
+                            {% else %}
+                                <span class="badge bg-warning text-dark">Pendente</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if ultima_baixa.integrado_tms %}
+                                <span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>Integrado</span>
+                            {% elif ultima_baixa.log_erro_tms %}
+                                <span class="text-danger small" title="{{ ultima_baixa.log_erro_tms }}">
+                                    <i class="bi bi-x-circle-fill me-1"></i>Erro
+                                </span>
+                            {% else %}
+                                <span class="text-muted small"><i class="bi bi-clock me-1"></i>Aguardando</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <div class="btn-group">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="abrirDetalhes('{{ nota.id }}')" title="Ver Foto/Histórico">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                
+                                <button class="btn btn-sm btn-outline-primary" onclick="sincronizarTMS('{{ nota.id }}')" title="Sincronizar com TMS">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endwith %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalNota" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title fw-bold">Detalhes da Entrega</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="conteudoModal">
+                <div class="alert alert-secondary border-0 shadow-sm mb-4">
+    <div class="row text-center">
+        <div class="col-md-6 border-end">
+            <small class="text-muted d-block text-uppercase fw-bold" style="font-size: 0.7rem;">Número da Nota</small>
+            <span class="fw-bold fs-5">{{ nota.numero_nota }}</span>
+        </div>
+        <div class="col-md-6">
+            <small class="text-muted d-block text-uppercase fw-bold" style="font-size: 0.7rem;">Tentativas de Entrega</small>
+            <span class="badge bg-primary fs-6">{{ tentativas.count }}</span>
+        </div>
+    </div>
+</div>
+
+<h6 class="fw-bold mb-3"><i class="bi bi-clock-history me-2"></i>Linha do Tempo de Entregas</h6>
+
+<div class="accordion accordion-flush" id="accordionHistorico">
+    {% for tentativa in tentativas %}
+    {% with baixa=tentativa.baixa_info.all.last %}
+    <div class="accordion-item border mb-2 rounded shadow-sm">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#tentativa{{ tentativa.id }}">
+                <div class="d-flex justify-content-between w-100 align-items-center me-3">
+                    <div>
+                        <span class="fw-bold small">{{ tentativa.manifesto.motorista.nome_completo|default:"S/ Motorista" }}</span>
+                        <br><small class="text-muted">Manifesto #{{ tentativa.manifesto.numero_manifesto }}</small>
+                    </div>
+                    <div class="text-end">
+                        {% if tentativa.status == 'BAIXADA' %}
+                            <span class="badge bg-success">Entregue</span>
+                        {% elif tentativa.status == 'OCORRENCIA' %}
+                            <span class="badge bg-danger">{{ baixa.ocorrencia.descricao }}</span>
+                        {% else %}
+                            <span class="badge bg-warning text-dark">Pendente</span>
+                        {% endif %}
+                        <br><small class="text-muted" style="font-size: 0.7rem;">{{ tentativa.manifesto.data_criacao|date:"d/m/Y H:i" }}</small>
+                    </div>
+                </div>
+            </button>
+        </h2>
+        <div id="tentativa{{ tentativa.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionHistorico">
+            <div class="accordion-body bg-light">
+                <div class="row g-3">
+                    <div class="col-md-7">
+                        <p class="mb-1 small"><strong>Recebedor:</strong> {{ baixa.recebedor|default:"--" }}</p>
+                        <p class="mb-1 small"><strong>Documento:</strong> {{ baixa.documento_recebedor|default:"--" }}</p>
+                        <p class="mb-1 small"><strong>Observações:</strong> <br><span class="text-muted italic">"{{ baixa.observacao|default:"Sem observações registradas." }}"</span></p>
+                        
+                        {% if baixa.integrado_tms %}
+                            <div class="badge bg-success-subtle text-success mt-2">
+                                <i class="bi bi-cloud-check-fill me-1"></i> Integrado ao TMS ESL em {{ baixa.data_integracao|date:"d/m/Y H:i" }}
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-5 text-center">
+                        {% if baixa.comprovante_foto_url %}
+                            <label class="d-block small fw-bold mb-1 text-muted">Comprovante</label>
+                            <a href="{{ baixa.comprovante_foto_url }}" target="_blank">
+                                <img src="{{ baixa.comprovante_foto_url }}" class="img-fluid rounded shadow-sm border" style="max-height: 150px;">
+                                <br><small class="btn btn-link btn-sm p-0 mt-1">Ver em tela cheia</small>
+                            </a>
+                        {% else %}
+                            <div class="py-4 text-muted small border rounded bg-white">
+                                <i class="bi bi-camera-off fs-4 d-block"></i> Sem foto registrada
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endwith %}
+    {% endfor %}
+</div>
+                </div>
+        </div>
+    </div>
+</div>
+<script>
+    function sincronizarTMS(notaId) {
+    if(!confirm("Deseja reenviar esta baixa para o TMS agora?")) return;
+    
+    fetch(`/api/manifesto/sincronizar-nota/${notaId}/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.mensagem);
+        location.reload();
+    })
+    .catch(error => alert("Erro ao disparar task: " + error));
+}
+
+function abrirDetalhes(notaId) {
+    const modal = new bootstrap.Modal(document.getElementById('modalNota'));
+    const container = document.getElementById('conteudoModal');
+    
+    container.innerHTML = '<div class="text-center p-5"><div class="spinner-border text-primary"></div></div>';
+    modal.show();
+
+    fetch(`/api/manifesto/detalhes-nota/${notaId}/`)
+    .then(r => r.text())
+    .then(html => container.innerHTML = html);
+}
+</script>
+{% endblock %}

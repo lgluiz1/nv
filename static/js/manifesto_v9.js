@@ -231,102 +231,88 @@ function renderEstruturaLista(numeroManifesto) {
             <div class="text-center mb-4">
                 <h5 class="fw-bold text-secondary mb-1">Manifesto #${numeroManifesto}</h5>
                 <div id="progresso-container" class="mt-2">
-                    <span id="contador-notas" class="badge bg-primary px-3 py-2">Buscando as NF-es...</span>
+                    <span id="contador-notas" class="badge bg-primary px-3 py-2">Sincronizando com ESL...</span>
                 </div>
             </div>
-            
-            <div id="lista-notas-container">
+
+            <div id="area-lista-dinamica">
                 <div class="text-center py-5">
                     <div class="spinner-border text-primary mb-3" role="status"></div>
-                    <p class="text-muted">Conectando à ESL e preparando sua rota...</p>
+                    <p class="text-muted">Preparando sua rota...</p>
                 </div>
             </div>
         </div>
     `;
     atualizarListaViva(numeroManifesto);
 }
-
 async function atualizarListaViva(numeroManifesto) {
     try {
         const response = await authFetch(`${API_BASE}manifesto/notas/?numero_manifesto=${numeroManifesto}`);
         if (!response || response.status !== 200) return;
 
         const notas = await response.json();
-        const container = document.getElementById('lista-notas-container');
+        const areaDinamica = document.getElementById('area-lista-dinamica'); // Altere no HTML conforme sugerido anteriormente
         const contador = document.getElementById('contador-notas');
-        
-        // Elemento para o botão de refresh (vamos criar um se não existir)
-        let btnRefresh = document.getElementById('btn-refresh-container');
 
-        if (container && notas.length > 0) {
+        if (areaDinamica && notas.length > 0) {
+            // 1. Injeta a Busca e o Scanner apenas se ainda não existirem
+            if (!document.getElementById('input-busca-nfe')) {
+                areaDinamica.innerHTML = `
+                    <div class="search-box mb-4 animate__animated animate__fadeInDown">
+                        <div class="input-group shadow-sm" style="border-radius: 15px; overflow: hidden;">
+                            <span class="input-group-text bg-white border-0"><i class="bi bi-search text-muted"></i></span>
+                            <input type="text" id="input-busca-nfe" class="form-control border-0 p-3" placeholder="Filtrar por Número ou Chave..." oninput="filtrarNotasOffline()">
+                            <button class="btn btn-white border-0 text-primary" onclick="document.getElementById('leitor-nfe-camera').click()">
+                                <i class="bi bi-camera-fill" style="font-size: 1.5rem;"></i>
+                            </button>
+                        </div>
+                        <input type="file" id="leitor-nfe-camera" accept="image/*" capture="environment" style="display: none" onchange="lerCodigoBarra(this)">
+                    </div>
+                    <div id="lista-notas-container"></div>
+                `;
+            }
+
+            const containerNotas = document.getElementById('lista-notas-container');
             let htmlNotas = '';
             let totalFinalizadas = 0;
 
+            // 2. Renderiza as Notas com atributo de busca
             notas.forEach(nf => {
                 const baixada = nf.ja_baixada;
                 if (baixada) totalFinalizadas++;
 
                 htmlNotas += `
-                    <div class="card mb-3 shadow-sm border-start border-${baixada ? 'success' : 'primary'} border-4 animate__animated animate__fadeInUp">
+                    <div class="card mb-3 shadow-sm border-start border-${baixada ? 'success' : 'primary'} border-4 animate__animated animate__fadeInUp" data-chave="${nf.chave_acesso}">
                         <div class="card-body p-3">
                             <div class="d-flex justify-content-between align-items-start">
-                                <h6 class="fw-bold mb-1">NF ${nf.numero_nota}</h6>
-                                ${baixada ? '<span class="badge bg-success">OK</span>' : ''}
+                                <h6 class="fw-bold mb-1">📝NF ${nf.numero_nota}</h6>
+                                <span>
+                                    ${nf.ja_baixada 
+                                        ? '<i class="bi bi-check-circle-fill text-success" style="font-size: 1.2rem;"></i>' 
+                                        : '<i class="bi bi-truck text-primary" style="font-size: 1.2rem;"></i>'}
+                                </span>
                             </div>
-                            <p class="small text-muted mb-1">${nf.destinatario}</p>
-                            <p class="small text-muted mb-2" style="font-size: 0.75rem;"><i class="bi bi-geo-alt"></i> ${nf.endereco_entrega}</p>
+                            <p class="small text-muted mb-1">👤 ${nf.destinatario}</p>
+                            <p class="small text-muted mb-2" style="font-size: 0.75rem;"><i class="bi bi-geo-alt"></i>${nf.endereco_entrega}</p>
                             ${!baixada ?
-                        `<button class="btn btn-sm btn-primary w-100" onclick="abrirModalBaixa('${nf.numero_nota}', '${nf.chave_acesso}')">Dar Baixa</button>` :
-                        `<button class="btn btn-sm btn-outline-success w-100" onclick='abrirModalDetalhes(${JSON.stringify(nf.dados_baixa)})'>Ver Detalhes</button>`
-                    }
+                                `<button class="btn btn-sm btn-primary w-100" onclick="abrirModalBaixa('${nf.numero_nota}', '${nf.chave_acesso}')">Dar Baixa</button>` :
+                                `<button class="btn btn-sm btn-outline-success w-100" onclick='abrirModalDetalhes(${JSON.stringify(nf.dados_baixa)})'>Ver Detalhes</button>`
+                            }
                         </div>
                     </div>`;
             });
 
-            container.innerHTML = htmlNotas;
+            containerNotas.innerHTML = htmlNotas;
 
-            // --- BOTÃO DE REFRESH PROFISSIONAL (FAB) ---
-            // Só aparece se a lista for carregada
-            if (!btnRefresh) {
-                btnRefresh = document.createElement('div');
-                btnRefresh.id = 'btn-refresh-container';
-                // Estilo para ficar flutuando no canto inferior
-                btnRefresh.innerHTML = `
-                    <button onclick="iniciarSincronismo('${numeroManifesto}')" 
-                            class="btn btn-primary shadow-lg animate__animated animate__bounceIn" 
-                            style="position: fixed; bottom: 80px; right: 20px; width: 60px; height: 60px; border-radius: 50%; z-index: 1050; display: flex; align-items: center; justify-content: center;">
-                        <i class="bi bi-arrow-clockwise fs-3"></i>
-                    </button>
-                `;
-                document.body.appendChild(btnRefresh);
-            }
+            // 3. Mantém o filtro ativo caso o motorista esteja digitando durante o polling
+            filtrarNotasOffline();
 
-            // --- LÓGICA DE CONTADORES DINÂMICOS ---
-            if (contador) {
-                let htmlContadores = `
-                    <div class="d-flex gap-2">
-                        <span class="badge bg-secondary p-2">${notas.length} Notas no Manifesto</span>
-                `;
-
-                if (totalFinalizadas > 0) {
-                    htmlContadores += `
-                        <span class="badge bg-success p-2 animate__animated animate__bounceIn">
-                            <i class="bi bi-check2-circle"></i> ${totalFinalizadas} Finalizadas
-                        </span>
-                    `;
-                }
-                
-                // ... (seu código de KM Final permanece igual)
-                if (notas.length > 0 && totalFinalizadas === notas.length) {
-                    const modalKM = new bootstrap.Modal(document.getElementById('kmFinalModal'));
-                    setTimeout(() => { modalKM.show(); }, 800);
-                }
-
-                htmlContadores += `</div>`;
-                contador.innerHTML = htmlContadores;
-            }
+            // 4. Botão de Refresh e Contadores
+            renderContadoresEBotaoRefresh(numeroManifesto, notas.length, totalFinalizadas, contador);
         }
-    } catch (err) { console.error("Erro na atualização viva:", err); }
+    } catch (err) { 
+        console.error("Erro na atualização viva:", err);
+    }
 }
 // =====================================================
 // FUNÇÕES DE INTERFACE (MODALS E SEARCH)
@@ -558,7 +544,7 @@ function abrirModalBaixa(numeroNota, chaveAcesso) {
     const inputChave = document.getElementById('hidden-chave-nf');
     if (!tituloEl || !inputChave) return;
 
-    tituloEl.innerText = `Ocorrência NF-e ${numeroNota}`;
+    tituloEl.innerText = `📝 Ocorrência NF-e ${numeroNota}`;
     inputChave.value = chaveAcesso;
 
     // Reset da Câmera
@@ -680,8 +666,14 @@ function abrirModalDetalhes(dados) {
     const container = document.getElementById('modal-detalhes-body');
     if (!container) return;
     container.innerHTML = `
-        <div class="mb-2 small"><strong>Data:</strong> ${dados.data}</div>
-        <div class="mb-3 small"><strong>Recebedor:</strong> ${dados.recebedor || 'Não informado'}</div>
+        <div class="mb-2 small"><strong>📅 Data:</strong> ${dados.data}</div>
+        <div class="mb-2 small"><strong>👤 Recebedor:</strong> ${dados.recebedor || 'Não informado'}</div>
+        <div class="mb-3 small">
+            <strong>📝 Ocorrência:</strong> 
+            <span class="badge bg-primary text-white">
+                ${dados.ocorrencia || 'Não informada'}
+            </span>
+        </div>
         ${dados.foto_url ? `<img src="${dados.foto_url}" class="img-fluid rounded border shadow-sm w-100 mb-3">` : ''}
     `;
     new bootstrap.Modal(document.getElementById('modalDetalhes')).show();
@@ -693,4 +685,41 @@ async function atualizarDadosHeader() {
         const data = await res.json();
         if (data && data.nome) document.getElementById('header-nome-motorista').textContent = data.nome.split(' ')[0];
     } catch (e) { console.error("Erro no header"); }
+}
+
+function filtrarNotasOffline() {
+    const termo = document.getElementById('input-busca-nfe').value.toLowerCase();
+    const cards = document.querySelectorAll('#lista-notas-container .card');
+
+    cards.forEach(card => {
+        // Busca dentro do card pelo texto da NF e pela chave (mesmo que a chave esteja oculta)
+        const textoCard = card.innerText.toLowerCase();
+        // Também pegamos o atributo data-chave que vamos adicionar no loop de renderização
+        const chave = card.getAttribute('data-chave') || "";
+
+        if (textoCard.includes(termo) || chave.includes(termo)) {
+            card.style.display = "block";
+            card.classList.add('animate__fadeIn');
+        } else {
+            card.style.display = "none";
+        }
+    });
+}
+
+async function lerCodigoBarra(input) {
+    if (!input.files || !input.files[0]) return;
+    
+    const codeReader = new ZXing.BrowserMultiFormatReader();
+    const file = input.files[0];
+    const imageUrl = URL.createObjectURL(file);
+
+    try {
+        const result = await codeReader.decodeFromImageUrl(imageUrl);
+        // Preenche o campo de busca com o código lido (chave de acesso)
+        document.getElementById('input-busca-nfe').value = result.text;
+        // Dispara a filtragem automática
+        filtrarNotasOffline();
+    } catch (err) {
+        alert("Não foi possível ler o código de barras. Tente tirar uma foto mais nítida ou digitar o número.");
+    }
 }
