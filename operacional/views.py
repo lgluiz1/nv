@@ -78,7 +78,7 @@ class DashboardView(TemplateView):
         hoje_fim = hoje_inicio + timedelta(days=1)
 
         # Pega nome e foto do usuario logado
-        context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
+        context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.last_name or self.request.user.username
         context['usuario_foto'] = ''
         try:
             perfil = Motorista.objects.get(user=self.request.user)
@@ -95,6 +95,9 @@ class DashboardView(TemplateView):
         context['mfts_ativos'] = Manifesto.objects.filter(status='EM_TRANSPORTE').count()
         context['total_notas'] = notas_do_dia.filter(status='BAIXADA').count()
         context['notas_ocorrencia'] = notas_do_dia.filter(status='OCORRENCIA').count()
+        # Pega todas as notas em transporte junto com as que foram baixadas e com ocorrencias 
+        
+
 
         # --- 2. TOP PERFORMANCE (MOTORISTAS REAIS) ---
         # Pegamos motoristas que tiveram notas baixadas hoje
@@ -142,4 +145,94 @@ class DashboardView(TemplateView):
         
         context['titulo'] = "Painel de Controle Operacional"
         context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
+        return context
+
+
+
+@method_decorator(login_required, name='dispatch')
+@method_decorator(apenas_operacional, name='dispatch')
+class NotasFiscaisListView(TemplateView):
+    template_name = 'desktop/paginas/notas_fiscais.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Inicia a query com todos os registros otimizados
+        queryset = NotaFiscal.objects.select_related(
+            'manifesto', 'manifesto__motorista'
+        ).prefetch_related(
+            'baixa_info', 'baixa_info__ocorrencia'
+        ).order_by('-manifesto__data_criacao')
+
+        # --- LÓGICA DE FILTROS ---
+        q = self.request.GET.get('q') # Busca Geral (NF ou Chave)
+        motorista = self.request.GET.get('motorista')
+        manifesto = self.request.GET.get('manifesto')
+        integrado = self.request.GET.get('integrado')
+        data_inicio = self.request.GET.get('data_inicio')
+
+        if q:
+            queryset = queryset.filter(
+                Q(numero_nota__icontains=q) | Q(chave_acesso__icontains=q)
+            )
+        
+        if motorista:
+            queryset = queryset.filter(manifesto__motorista__nome_completo__icontains=motorista)
+            
+        if manifesto:
+            queryset = queryset.filter(manifesto__numero_manifesto__icontains=manifesto)
+
+        if integrado:
+            is_integrado = integrado == 'sim'
+            queryset = queryset.filter(baixa_info__integrado_tms=is_integrado)
+
+        if data_inicio:
+            queryset = queryset.filter(manifesto__data_criacao__date=data_inicio)
+
+        context['notas'] = queryset[:100] # Limitamos a 100 para performance
+        context['titulo'] = "Gestão de Notas Fiscais"
+        return context
+
+from django.shortcuts import render, get_object_or_404
+from manifesto.models import NotaFiscal
+
+@method_decorator(login_required, name='dispatch')
+@method_decorator(apenas_operacional, name='dispatch')
+def detalhes_nota_fiscal_view(request, nota_id):
+    # 1. Pegamos a nota clicada
+    nota_referencia = get_object_or_404(NotaFiscal, id=nota_id)
+    
+    historico_tentativas = NotaFiscal.objects.filter(
+        chave_acesso=nota_referencia.chave_acesso
+    ).select_related(
+        'manifesto', 'manifesto__motorista'
+    ).prefetch_related(
+        'baixa_info__ocorrencia'
+    ).order_by('-manifesto__data_criacao')
+
+    return render(request, 'desktop/parciais/detalhes_nota_modal.html', {
+        'nota': nota_referencia,
+        'tentativas': historico_tentativas
+    })
+
+# Pagina Manifesto 
+@method_decorator(login_required, name='dispatch')
+@method_decorator(apenas_operacional, name='dispatch')
+class ManifestoDetailView(TemplateView):
+    template_name = 'desktop/paginas/manifesto.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        manifesto_id = self.kwargs.get('manifesto_id')
+        manifesto = get_object_or_404(Manifesto, id=manifesto_id)
+
+        context['manifesto'] = manifesto
+        context['notas'] = manifesto.notas_fiscais.select_related(
+            'baixa_info', 'baixa_info__ocorrencia'
+        ).all()
+        context['historico_ocorrencias'] = HistoricoOcorrencia.objects.filter(
+            manifesto=manifesto
+        ).order_by('-data_hora')
+
+        context['titulo'] = f"Detalhes do Manifesto {manifesto.numero_manifesto}"
         return context
