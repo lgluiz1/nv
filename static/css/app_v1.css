@@ -204,3 +204,50 @@ body {
     box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
     border-color: var(--primary-color);
 }
+
+.scanner-laser {
+    position: absolute;
+    width: 80%;
+    height: 3px;
+    background: red;
+    top: 50%;
+    left: 10%;
+    animation: scan 1.5s infinite;
+}
+
+
+
+.scanner-laser::after {
+    content: "";
+    position: absolute;
+    top: 50%; width: 100%; height: 2px;
+    background: red;
+    box-shadow: 0 0 10px red;
+    animation: laser 2s infinite;
+}
+@keyframes scan {
+    0% { opacity: 0.2; }
+    50% { opacity: 1; }
+    100% { opacity: 0.2; }
+}
+/* Estilo para o modal do scanner */
+#scannerModal .modal-body {
+    background: #000;
+}
+
+/* Guia visual adaptado para capturar a chave de acesso (longa) */
+
+/* Aviso para virar o celular (aparece apenas se estiver em pé) */
+@media screen and (orientation: portrait) {
+    #scannerModal .modal-body::before {
+        content: "🔄 Gire o celular para deitado para ler melhor";
+        position: absolute;
+        top: 20px;
+        color: #fff;
+        background: rgba(255, 0, 0, 0.7);
+        padding: 10px;
+        border-radius: 20px;
+        z-index: 20;
+        font-weight: bold;
+    }
+}

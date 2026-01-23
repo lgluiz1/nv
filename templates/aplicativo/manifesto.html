@@ -412,7 +412,34 @@
         </div>
     </div>
 </div>
+<div class="modal fade" id="scannerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-0">
+                <h5 class="modal-title text-white">Escaneie o Código de Barras</h5>
+                <button type="button"
+                        class="btn-close btn-close-white"
+                        data-bs-dismiss="modal"
+                        onclick="pararScanner()"></button>
+            </div>
+
+            <div class="modal-body p-0 position-relative d-flex align-items-center justify-content-center">
+                <video
+                    id="video-scanner"
+                    autoplay
+                    playsinline
+                    muted
+                    style="width:100%; height:100%; object-fit:cover;">
+                </video>
+
+                <div class="scanner-laser"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <span id="manifesto-id-display" style="display: none;"></span>
+<script src="https://unpkg.com/@zxing/library@latest"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
  let modalUpdate;
@@ -462,9 +489,8 @@ async function recarregarPWA() {
 }
 </script>
 <script src="{% static 'js/serviceworker.js' %}?v=1.3"></script> 
-    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@latest"></script>
     <script src="/static/js/login_motorista/authFetch.js"></script>
-    <script src="{% static 'js/manifesto_v9.js' %}"></script>
+    <script src="{% static 'js/manifesto_v10.js' %}"></script>
     <script src="{% static 'js/historico_v1.js' %}"></script>
 
 </body>

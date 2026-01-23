@@ -251,32 +251,70 @@ async function atualizarListaViva(numeroManifesto) {
         if (!response || response.status !== 200) return;
 
         const notas = await response.json();
-        const areaDinamica = document.getElementById('area-lista-dinamica'); // Altere no HTML conforme sugerido anteriormente
+        const areaDinamica = document.getElementById('area-lista-dinamica');
         const contador = document.getElementById('contador-notas');
-
+        
         if (areaDinamica && notas.length > 0) {
-            // 1. Injeta a Busca e o Scanner apenas se ainda não existirem
+            // 1. INJEÇÃO DA BUSCA (Se não existir)
             if (!document.getElementById('input-busca-nfe')) {
                 areaDinamica.innerHTML = `
-                    <div class="search-box mb-4 animate__animated animate__fadeInDown">
-                        <div class="input-group shadow-sm" style="border-radius: 15px; overflow: hidden;">
-                            <span class="input-group-text bg-white border-0"><i class="bi bi-search text-muted"></i></span>
-                            <input type="text" id="input-busca-nfe" class="form-control border-0 p-3" placeholder="Filtrar por Número ou Chave..." oninput="filtrarNotasOffline()">
-                            <button class="btn btn-white border-0 text-primary" onclick="document.getElementById('leitor-nfe-camera').click()">
-                                <i class="bi bi-camera-fill" style="font-size: 1.5rem;"></i>
-                            </button>
-                        </div>
-                        <input type="file" id="leitor-nfe-camera" accept="image/*" capture="environment" style="display: none" onchange="lerCodigoBarra(this)">
-                    </div>
-                    <div id="lista-notas-container"></div>
-                `;
+    <div class="search-box mb-4 animate__animated animate__fadeInDown">
+        <div class="input-group shadow-sm position-relative"
+             style="border-radius: 15px; overflow: hidden;">
+
+            <span class="input-group-text bg-white border-0">
+                <i class="bi bi-search text-muted"></i>
+            </span>
+
+            <input
+                type="text"
+                id="input-busca-nfe"
+                class="form-control border-0 p-3"
+                placeholder="Filtrar por Número ou Chave..."
+                oninput="filtrarNotasOffline(); toggleClearButton();"
+            >
+
+            <!-- BOTÃO LIMPAR (X) -->
+            <button
+                type="button"
+                id="btn-limpar-busca"
+                class="btn btn-white border-0 text-danger d-none"
+                onclick="limparBusca()"
+                title="Limpar busca"
+            >
+                <i class="bi bi-x-circle-fill" style="font-size: 1.3rem;"></i>
+            </button>
+
+            <!-- BOTÃO CÂMERA -->
+            <button
+                class="btn btn-white border-0 text-primary"
+                onclick="abrirScanner()"
+                title="Ler código de barras"
+            >
+                <i class="bi bi-camera-fill" style="font-size: 1.5rem;"></i>
+            </button>
+
+        </div>
+
+        <input
+            type="file"
+            id="leitor-nfe-camera"
+            accept="image/*"
+            capture="environment"
+            style="display: none"
+            onchange="lerCodigoBarra(this)"
+        >
+    </div>
+
+    <div id="lista-notas-container"></div>
+`;
             }
 
             const containerNotas = document.getElementById('lista-notas-container');
             let htmlNotas = '';
             let totalFinalizadas = 0;
 
-            // 2. Renderiza as Notas com atributo de busca
+            // 2. RENDERIZAÇÃO DAS NOTAS
             notas.forEach(nf => {
                 const baixada = nf.ja_baixada;
                 if (baixada) totalFinalizadas++;
@@ -287,13 +325,11 @@ async function atualizarListaViva(numeroManifesto) {
                             <div class="d-flex justify-content-between align-items-start">
                                 <h6 class="fw-bold mb-1">📝NF ${nf.numero_nota}</h6>
                                 <span>
-                                    ${nf.ja_baixada 
-                                        ? '<i class="bi bi-check-circle-fill text-success" style="font-size: 1.2rem;"></i>' 
-                                        : '<i class="bi bi-truck text-primary" style="font-size: 1.2rem;"></i>'}
+                                    ${baixada ? '<i class="bi bi-check-circle-fill text-success" style="font-size: 1.2rem;"></i>' : '<i class="bi bi-truck text-primary" style="font-size: 1.2rem;"></i>'}
                                 </span>
                             </div>
                             <p class="small text-muted mb-1">👤 ${nf.destinatario}</p>
-                            <p class="small text-muted mb-2" style="font-size: 0.75rem;"><i class="bi bi-geo-alt"></i>${nf.endereco_entrega}</p>
+                            <p class="small text-muted mb-2" style="font-size: 0.75rem;"><i class="bi bi-geo-alt"></i> ${nf.endereco_entrega}</p>
                             ${!baixada ?
                                 `<button class="btn btn-sm btn-primary w-100" onclick="abrirModalBaixa('${nf.numero_nota}', '${nf.chave_acesso}')">Dar Baixa</button>` :
                                 `<button class="btn btn-sm btn-outline-success w-100" onclick='abrirModalDetalhes(${JSON.stringify(nf.dados_baixa)})'>Ver Detalhes</button>`
@@ -304,14 +340,51 @@ async function atualizarListaViva(numeroManifesto) {
 
             containerNotas.innerHTML = htmlNotas;
 
-            // 3. Mantém o filtro ativo caso o motorista esteja digitando durante o polling
-            filtrarNotasOffline();
+            // 3. RECUPERAÇÃO DO BOTÃO DE REFRESH (FAB)
+            let btnRefresh = document.getElementById('btn-refresh-container');
+            if (!btnRefresh) {
+                btnRefresh = document.createElement('div');
+                btnRefresh.id = 'btn-refresh-container';
+                btnRefresh.innerHTML = `
+                    <button onclick="iniciarSincronismo('${numeroManifesto}')" 
+                            class="btn btn-primary shadow-lg animate__animated animate__bounceIn" 
+                            style="position: fixed; bottom: 80px; right: 20px; width: 60px; height: 60px; border-radius: 50%; z-index: 1050; display: flex; align-items: center; justify-content: center;">
+                        <i class="bi bi-arrow-clockwise fs-3"></i>
+                    </button>
+                `;
+                document.body.appendChild(btnRefresh);
+            }
 
-            // 4. Botão de Refresh e Contadores
-            renderContadoresEBotaoRefresh(numeroManifesto, notas.length, totalFinalizadas, contador);
+            // 4. RECUPERAÇÃO DOS CONTADORES
+            if (contador) {
+                let htmlContadores = `
+                    <div class="d-flex gap-2">
+                        <span class="badge bg-secondary p-2">${notas.length} Notas no Manifesto</span>
+                `;
+
+                if (totalFinalizadas > 0) {
+                    htmlContadores += `
+                        <span class="badge bg-success p-2 animate__animated animate__bounceIn">
+                            <i class="bi bi-check2-circle"></i> ${totalFinalizadas} Finalizadas
+                        </span>
+                    `;
+                }
+                
+                // DISPARO AUTOMÁTICO DO KM FINAL
+                if (notas.length > 0 && totalFinalizadas === notas.length) {
+                    const modalKM = new bootstrap.Modal(document.getElementById('kmFinalModal'));
+                    setTimeout(() => { modalKM.show(); }, 800);
+                }
+
+                htmlContadores += `</div>`;
+                contador.innerHTML = htmlContadores;
+            }
+
+            // Mantém filtro de busca ativo
+            filtrarNotasOffline();
         }
     } catch (err) { 
-        console.error("Erro na atualização viva:", err);
+        console.error("Erro na atualização viva:", err); 
     }
 }
 // =====================================================
@@ -687,39 +760,157 @@ async function atualizarDadosHeader() {
     } catch (e) { console.error("Erro no header"); }
 }
 
+// 1. FILTRAGEM COM SANITIZAÇÃO (Apenas números)
+function beep() {
+    const audio = new Audio(
+        "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YRAAAAAA/////w=="
+    );
+    audio.play().catch(() => {});
+}
 function filtrarNotasOffline() {
-    const termo = document.getElementById('input-busca-nfe').value.toLowerCase();
-    const cards = document.querySelectorAll('#lista-notas-container .card');
+    const input = document.getElementById('input-busca-nfe');
+    // REMOVE TUDO QUE NÃO É NÚMERO AO DIGITAR
+    const termo = input.value.replace(/\D/g, ''); 
+    input.value = termo; // Atualiza o campo visualmente apenas com números
 
+    const cards = document.querySelectorAll('#lista-notas-container .card');
     cards.forEach(card => {
-        // Busca dentro do card pelo texto da NF e pela chave (mesmo que a chave esteja oculta)
-        const textoCard = card.innerText.toLowerCase();
-        // Também pegamos o atributo data-chave que vamos adicionar no loop de renderização
+        const textoCard = card.innerText.replace(/\D/g, ''); // Limpa o texto do card para comparar
         const chave = card.getAttribute('data-chave') || "";
 
         if (textoCard.includes(termo) || chave.includes(termo)) {
             card.style.display = "block";
-            card.classList.add('animate__fadeIn');
         } else {
             card.style.display = "none";
         }
     });
 }
 
+// 2. SCANNER EM TEMPO REAL (Usando ZXing)
+let codeReader = null;
+let lendo = false;
+
+function abrirScanner() {
+    const modalEl = document.getElementById('scannerModal');
+    const modal = new bootstrap.Modal(modalEl);
+
+    lendo = false;
+    modal.show();
+
+    modalEl.addEventListener('shown.bs.modal', async () => {
+        try {
+            codeReader = new ZXing.BrowserMultiFormatReader();
+
+            await codeReader.decodeFromConstraints(
+                {
+                    video: {
+                        facingMode: { ideal: "environment" },
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                },
+                document.getElementById('video-scanner'),
+                (result, err) => {
+                    if (result && !lendo) {
+                        lendo = true;
+
+                        const codigo = result.text.replace(/\D/g, '');
+                        console.log("Código lido:", codigo);
+
+                        // 1️⃣ Preenche campo de busca
+                        const campoBusca = document.getElementById('input-busca-nfe');
+                        campoBusca.value = codigo;
+                        toggleClearButton();
+                        filtrarNotasOffline();
+
+                        // 2️⃣ Filtra a lista
+                        filtrarNotasOffline();
+
+                        // 3️⃣ Feedback
+                        beep();
+                        if (navigator.vibrate) navigator.vibrate(150);
+
+                        // 4️⃣ Fecha scanner e modal
+                        pararScanner();
+                        modal.hide();
+                    }
+                }
+            );
+
+        } catch (err) {
+            alert("Erro ao acessar a câmera: " + err);
+            console.error(err);
+        }
+    }, { once: true });
+}
+
+function pararScanner() {
+    if (codeReader) {
+        codeReader.reset(); // libera a câmera
+        codeReader = null;
+    }
+}
+
+
 async function lerCodigoBarra(input) {
     if (!input.files || !input.files[0]) return;
-    
-    const codeReader = new ZXing.BrowserMultiFormatReader();
-    const file = input.files[0];
-    const imageUrl = URL.createObjectURL(file);
+
+    const btnCamera = input.parentElement.querySelector('button');
+    const iconeOriginal = btnCamera.innerHTML;
+    btnCamera.innerHTML = '<div class="spinner-border spinner-border-sm text-primary"></div>';
+
+    let imageUrl = null;
 
     try {
+        const codeReader = new ZXing.BrowserMultiFormatReader();
+        imageUrl = URL.createObjectURL(input.files[0]);
+
         const result = await codeReader.decodeFromImageUrl(imageUrl);
-        // Preenche o campo de busca com o código lido (chave de acesso)
-        document.getElementById('input-busca-nfe').value = result.text;
-        // Dispara a filtragem automática
+
+        const codigo = result.text.replace(/\D/g, '');
+        console.log("Código lido (imagem):", codigo);
+
+        // 1️⃣ Preenche campo de busca
+        const campoBusca = document.getElementById('input-busca-nfe');
+        campoBusca.value = codigo;
+        toggleClearButton();
         filtrarNotasOffline();
+
+        // 2️⃣ Filtra lista
+        filtrarNotasOffline();
+
+        // 3️⃣ Feedback
+        beep();
+        if (navigator.vibrate) navigator.vibrate(150);
+
     } catch (err) {
-        alert("Não foi possível ler o código de barras. Tente tirar uma foto mais nítida ou digitar o número.");
+        alert("Não foi possível ler o código de barras. Tente aproximar mais a câmera ou digitar a NF.");
+        console.error("Erro leitura imagem:", err);
+    } finally {
+        btnCamera.innerHTML = iconeOriginal;
+        if (imageUrl) URL.revokeObjectURL(imageUrl);
     }
+}
+function toggleClearButton() {
+    const input = document.getElementById('input-busca-nfe');
+    const btn = document.getElementById('btn-limpar-busca');
+
+    if (!input || !btn) return;
+
+    if (input.value.trim().length > 0) {
+        btn.classList.remove('d-none');
+    } else {
+        btn.classList.add('d-none');
+    }
+}
+
+function limparBusca() {
+    const input = document.getElementById('input-busca-nfe');
+    if (!input) return;
+
+    input.value = "";
+    input.focus();
+
+    toggleClearButton();
+    filtrarNotasOffline();
 }
