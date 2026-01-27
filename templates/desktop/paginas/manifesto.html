@@ -1,6 +1,7 @@
 {% extends "desktop/base.html" %}
 {% load static %}
-
+{% block title %}{{ titulo }}{% endblock %}
+{% block usuario %}{{ usuario_nome }}{% endblock %}
 {% block extra_head %}
     <meta http-equiv="refresh" content="30">
 {% endblock %}
