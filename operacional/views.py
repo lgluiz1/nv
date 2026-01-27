@@ -1,8 +1,9 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect
+from django.db import transaction
 from django.http import JsonResponse
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, login
-from usuarios.models import Motorista
+from usuarios.models import Motorista , Filial
 from manifesto.models import Manifesto, Ocorrencia , NotaFiscal , BaixaNF , ManifestoBuscaLog, HistoricoOcorrencia
 import json
 from django.views.generic import TemplateView
@@ -12,10 +13,20 @@ from usuarios.decorators import apenas_operacional
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Count, Q, Sum
-
+from django.views.generic import ListView
 
 def login_operacional_view(request):
+    # ✅ NOVO: Se o usuário já estiver logado e for OPERACIONAL, manda direto pro dashboard
     if request.method == 'GET':
+        if request.user.is_authenticated:
+            try:
+                # Verifica se o perfil vinculado ao usuário é OPERACIONAL
+                if request.user.motorista_perfil.tipo_usuario == 'OPERACIONAL':
+                    return redirect('/dashboard/') 
+            except Exception:
+                # Se não tiver perfil ou for motorista, deixa carregar o login 
+                # (ou você pode dar logout para limpar a sessão do motorista aqui)
+                pass
         return render(request, 'desktop/login.html')
 
     if request.method == 'POST':
@@ -23,16 +34,17 @@ def login_operacional_view(request):
             data = json.loads(request.body)
             cpf = data.get('cpf', '').replace('.', '').replace('-', '')
             senha = data.get('senha')
-            acao = data.get('acao') # 'verificar' ou 'cadastrar' ou 'login'
+            acao = data.get('acao') 
 
             try:
+                # Busca o perfil pelo CPF
                 perfil = Motorista.objects.get(cpf=cpf)
             except Motorista.DoesNotExist:
-                return JsonResponse({'status': 'erro', 'message': 'CPF não registrado. Entre em contato com o time de cadastro.'}, status=404)
+                return JsonResponse({'status': 'erro', 'message': 'CPF não registrado.'}, status=404)
 
-            # 1. Verifica se é OPERACIONAL
+            # 1. Verifica se é OPERACIONAL (Segurança extra)
             if perfil.tipo_usuario != 'OPERACIONAL':
-                return JsonResponse({'status': 'erro', 'message': 'Este acesso é restrito ao time operacional.'}, status=403)
+                return JsonResponse({'status': 'erro', 'message': 'Acesso restrito ao operacional.'}, status=403)
 
             # 2. Lógica de Verificação Inicial
             if acao == 'verificar':
@@ -164,6 +176,8 @@ class NotasFiscaisListView(TemplateView):
             'baixa_info', 'baixa_info__ocorrencia'
         ).order_by('-manifesto__data_criacao')
 
+        
+
         # --- LÓGICA DE FILTROS ---
         q = self.request.GET.get('q') # Busca Geral (NF ou Chave)
         motorista = self.request.GET.get('motorista')
@@ -191,48 +205,74 @@ class NotasFiscaisListView(TemplateView):
 
         context['notas'] = queryset[:100] # Limitamos a 100 para performance
         context['titulo'] = "Gestão de Notas Fiscais"
+        context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
         return context
 
 from django.shortcuts import render, get_object_or_404
 from manifesto.models import NotaFiscal
 
-@method_decorator(login_required, name='dispatch')
-@method_decorator(apenas_operacional, name='dispatch')
+# Use os decoradores diretamente na função, sem o method_decorator
+@login_required(login_url='/login/')
+@apenas_operacional
 def detalhes_nota_fiscal_view(request, nota_id):
-    # 1. Pegamos a nota clicada
-    nota_referencia = get_object_or_404(NotaFiscal, id=nota_id)
+    # 1. Busca a nota de referência para descobrir a chave de acesso
+    nota_clicada = get_object_or_404(NotaFiscal, id=nota_id)
     
-    historico_tentativas = NotaFiscal.objects.filter(
-        chave_acesso=nota_referencia.chave_acesso
+    # 2. Busca TODAS as ocorrências dessa mesma nota no sistema todo pela chave
+    historico_completo = NotaFiscal.objects.filter(
+        chave_acesso=nota_clicada.chave_acesso
     ).select_related(
-        'manifesto', 'manifesto__motorista'
+        'manifesto', 
+        'manifesto__motorista'
     ).prefetch_related(
-        'baixa_info__ocorrencia'
-    ).order_by('-manifesto__data_criacao')
+        'baixa_info',           # Traz as informações de baixa/entrega
+        'baixa_info__ocorrencia' # Traz a descrição da ocorrência
+    ).order_by('-manifesto__data_criacao') # Da mais recente para a mais antiga
 
-    return render(request, 'desktop/parciais/detalhes_nota_modal.html', {
-        'nota': nota_referencia,
-        'tentativas': historico_tentativas
-    })
+    context = {
+        'nota_principal': nota_clicada,
+        'historico': historico_completo,
+    }
+    
+    # Retorna apenas o fragmento HTML para o modal
+    return render(request, 'desktop/parciais/detalhes_nota_modal.html', context)
+
 
 # Pagina Manifesto 
-@method_decorator(login_required, name='dispatch')
+@method_decorator(login_required(login_url='/login/'), name='dispatch')
 @method_decorator(apenas_operacional, name='dispatch')
-class ManifestoDetailView(TemplateView):
+class ManifestosMonitoramentoView(ListView):
+    model = Manifesto
     template_name = 'desktop/paginas/manifesto.html'
+    context_object_name = 'manifestos'
+    paginate_by = 20
 
+    def get_queryset(self):
+        # Otimização: traz motorista e conta as notas em uma única query
+        queryset = Manifesto.objects.select_related('motorista').annotate(
+            total_notas=Count('notas_fiscais'),
+            notas_concluidas=Count('notas_fiscais', filter=Q(notas_fiscais__status__in=['BAIXADA', 'OCORRENCIA']))
+        ).order_by('-data_criacao')
+
+        # Filtros
+        filial_id = self.request.GET.get('filial')
+        numero = self.request.GET.get('numero')
+        motorista = self.request.GET.get('motorista')
+        data = self.request.GET.get('data')
+
+        if filial_id:
+            queryset = queryset.filter(filial_id=filial_id)
+        if numero:
+            queryset = queryset.filter(numero_manifesto__icontains=numero)
+        if motorista:
+            queryset = queryset.filter(motorista__nome_completo__icontains=motorista)
+        if data:
+            queryset = queryset.filter(data_criacao__date=data)
+
+        return queryset
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        manifesto_id = self.kwargs.get('manifesto_id')
-        manifesto = get_object_or_404(Manifesto, id=manifesto_id)
-
-        context['manifesto'] = manifesto
-        context['notas'] = manifesto.notas_fiscais.select_related(
-            'baixa_info', 'baixa_info__ocorrencia'
-        ).all()
-        context['historico_ocorrencias'] = HistoricoOcorrencia.objects.filter(
-            manifesto=manifesto
-        ).order_by('-data_hora')
-
-        context['titulo'] = f"Detalhes do Manifesto {manifesto.numero_manifesto}"
+        # Enviamos a lista de filiais para o select do filtro
+        context['filiais'] = Filial.objects.all() 
         return context

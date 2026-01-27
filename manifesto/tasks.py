@@ -215,8 +215,12 @@ def iniciar_transporte_manifesto_tms_task(self, numero_manifesto):
 
 @shared_task(bind=True, max_retries=3)
 def buscar_manifesto_completo_task(self, log_id):
-    from manifesto.models import Manifesto, NotaFiscal, ManifestoBuscaLog
-    
+    from manifesto.models import Manifesto, NotaFiscal, ManifestoBuscaLog # Certifique-se de importar Filial
+    from usuarios.models import Filial
+    import requests
+    import json
+    import time
+
     try:
         log = ManifestoBuscaLog.objects.select_related('motorista').get(id=log_id)
         numero_visual = log.numero_manifesto
@@ -243,23 +247,41 @@ def buscar_manifesto_completo_task(self, log_id):
             log.status, log.mensagem_erro = 'ERRO', "Manifesto não encontrado."
             log.save(); return
 
+        # Dados do primeiro registro retornado
+        info_tms = dados_mft[0]
+
         # Validação de CPF
-        cpf_tms = str(dados_mft[0].get('mft_mdr_iil_document', '')).strip()
+        cpf_tms = str(info_tms.get('mft_mdr_iil_document', '')).strip()
         if cpf_tms != str(motorista.cpf).replace('.','').replace('-',''):
             log.status, log.mensagem_erro = 'ERRO', "Manifesto não pertence ao seu CPF."
             log.save(); return
 
-        # Criar/Recuperar Manifesto Local
-        manifesto_obj, _ = Manifesto.objects.get_or_create(
+        # --- NOVO: LÓGICA DE FILIAL ---
+        nome_filial_tms = info_tms.get('mft_crn_psn_nickname', 'MATRIZ').strip().upper()
+        
+        # Busca a filial pelo nome, se não existir, cria
+        filial_obj, created = Filial.objects.get_or_create(
+            nome=nome_filial_tms
+        )
+        if created:
+            logger.info(f"🏢 Nova Filial cadastrada: {nome_filial_tms}")
+
+        # Criar/Recuperar Manifesto Local (Incluindo a Filial)
+        manifesto_obj, _ = Manifesto.objects.update_or_create(
             numero_manifesto=numero_visual,
-            defaults={'motorista': motorista, 'status': 'EM_TRANSPORTE'}
+            defaults={
+                'motorista': motorista, 
+                'filial': filial_obj, # Vinculando a Filial aqui
+                'status': 'EM_TRANSPORTE'
+            }
         )
         
-        id_interno_esl = dados_mft[0].get('id') or numero_visual
+        id_interno_esl = info_tms.get('id') or numero_visual
         log.status = 'ENRIQUECENDO'
         log.save()
 
         # --- ETAPA 2: CAPTURAR LISTA DE NOTAS ---
+        # (Mantém sua lógica de notas...)
         token_notas = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
         url_notas = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
         
@@ -289,7 +311,8 @@ def buscar_manifesto_completo_task(self, log_id):
             start_cursor = paging["next_id"]
             time.sleep(2.3)
 
-        # --- ETAPA 3: ENRIQUECIMENTO NOTA A NOTA (LÓGICA DE REENTREGA) ---
+        # --- ETAPA 3: ENRIQUECIMENTO NOTA A NOTA ---
+        # (Mantém sua lógica de enriquecimento...)
         total_processadas = 0
         for chave, numero in notas_unicas_dict.items():
             try:
@@ -309,19 +332,13 @@ def buscar_manifesto_completo_task(self, log_id):
                         endereco = f"{rua} {num}".strip().upper()
 
                 with transaction.atomic():
-                    # 1. Tenta buscar a nota vinculada ESPECIFICAMENTE a este manifesto
-                    # Isso garante que se a nota existiu em outro manifesto antigo, não mexe nela lá.
                     nota_no_manifesto = NotaFiscal.objects.filter(
                         manifesto=manifesto_obj, 
                         chave_acesso=chave
                     ).first()
                     
-                    # 2. Define o status final:
-                    # Se já existia neste manifesto (refresh), mantém o status que está (ex: BAIXADA).
-                    # Se é a primeira vez que entra neste manifesto, vira PENDENTE.
                     status_final = nota_no_manifesto.status if nota_no_manifesto else 'PENDENTE'
 
-                    # 3. Salva usando a composição (Manifesto + Chave)
                     NotaFiscal.objects.update_or_create(
                         manifesto=manifesto_obj,
                         chave_acesso=chave,
@@ -334,33 +351,20 @@ def buscar_manifesto_completo_task(self, log_id):
                     )
                 
                 total_processadas += 1
-                logger.info(f"✅ NF {numero} processada no Manifesto {numero_visual}")
-
             except Exception as e:
                 logger.warning(f"⚠️ Erro nota {numero}: {e}")
-                # Fallback seguro vinculando ao manifesto atual
-                NotaFiscal.objects.get_or_create(
-                    manifesto=manifesto_obj,
-                    chave_acesso=chave,
-                    defaults={
-                        'numero_nota': str(numero),
-                        'destinatario': "ERRO AO BUSCAR DADOS",
-                        'endereco_entrega': "CONSULTE DOCUMENTO FÍSICO",
-                        'status': 'PENDENTE'
-                    }
-                )
                 continue
 
         log.status = 'PROCESSADO'
         log.save()
-        return f"Manifesto {numero_visual} finalizado com {total_processadas} notas."
+        return f"Manifesto {numero_visual} finalizado com {total_processadas} notas na filial {nome_filial_tms}."
 
     except Exception as e:
         logger.error(f"🔴 Erro crítico: {str(e)}")
         log.status, log.mensagem_erro = 'ERRO', str(e)
         log.save()
         raise self.retry(exc=e, countdown=60)
-
+    
 def buscar_detalhes_esl_interno(chave, numero, token):
     """Auxiliar para buscar endereço no Endpoint 3"""
     url = "https://quickdelivery.eslcloud.com.br/api/analytics/reports/9873/data"

@@ -1,6 +1,134 @@
 {% extends "desktop/base.html" %}
-{% block content %}
-<h1>Detalhes do Manifesto</h1>
-<p>Aqui estão os detalhes do manifesto selecionado.</p>
+{% load static %}
 
-{% endblock content %}
+{% block extra_head %}
+    <meta http-equiv="refresh" content="30">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="fw-bold">Gestão de Manifestos</h3>
+        <span class="badge bg-light text-dark border shadow-sm p-2">
+            <i class="bi bi-arrow-clockwise me-1"></i> Atualizando em 30s
+        </span>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3">
+            <div class="col-md-2">
+                <label class="small fw-bold text-muted">Filial</label>
+                <select name="filial" class="form-select form-select-sm">
+                    <option value="">Todas as Filiais</option>
+                    {% for f in filiais %}
+                        <option value="{{ f.id }}" {% if request.GET.filial == f.id|stringformat:"i" %}selected{% endif %}>
+                            {{ f.nome }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <label class="small fw-bold text-muted">Nº Manifesto</label>
+                <input type="text" name="numero" class="form-control form-control-sm" value="{{ request.GET.numero }}">
+            </div>
+            
+            <div class="col-md-3">
+                <label class="small fw-bold text-muted">Motorista</label>
+                <input type="text" name="motorista" class="form-control form-control-sm" value="{{ request.GET.motorista }}">
+            </div>
+
+            <div class="col-md-3">
+                <label class="small fw-bold text-muted">Data</label>
+                <input type="date" name="data" class="form-control form-control-sm" value="{{ request.GET.data }}">
+            </div>
+
+            <div class="col-md-2 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-filter"></i></button>
+                <a href="?" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-circle"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Número</th>
+                        <th>Motorista</th>
+                        <th>Status</th>
+                        <th style="width: 250px;">Progresso de Entrega</th>
+                        <th>Data Criação</th>
+                        <th class="text-center">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in manifestos %}
+                    <tr>
+                        <td class="fw-bold text-primary">#{{ m.numero_manifesto }}</td>
+                        <td>
+                            <div class="small fw-bold">{{ m.motorista.nome_completo }}</div>
+                            <small class="text-muted">{{ m.motorista.cpf }}</small>
+                        </td>
+                        <td>
+                            {% if m.status == 'EM_TRANSPORTE' %}
+                                <span class="badge bg-info">Em Rota</span>
+                            {% elif m.status == 'FINALIZADO' %}
+                                <span class="badge bg-success">Finalizado</span>
+                            {% else %}
+                                <span class="badge bg-warning text-dark">Aguardando</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% with progresso=m.notas_concluidas|default:0|add:0 %}
+                            {% with total=m.total_notas|default:1 %}
+                            {# Cálculo simples de porcentagem via template tag custom ou lógica direta #}
+                            {% widthratio m.notas_concluidas m.total_notas 100 as porcentagem %}
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="progress w-100" style="height: 8px;">
+                                    <div class="progress-bar {% if porcentagem == '100' %}bg-success{% else %}bg-primary{% endif %}" 
+                                         role="progressbar" style="width: {{ porcentagem }}%"></div>
+                                </div>
+                                <small class="fw-bold text-muted">{{ porcentagem }}%</small>
+                            </div>
+                            <div style="font-size: 0.65rem;" class="text-muted text-center mt-1">
+                                {{ m.notas_concluidas }} de {{ m.total_notas }} notas concluídas
+                            </div>
+                            {% endwith %}
+                            {% endwith %}
+                        </td>
+                        <td class="small">{{ m.data_criacao|date:"d/m/Y H:i" }}</td>
+                        <td class="text-center">
+                            <div class="btn-group">
+                                <a href="" class="btn btn-sm btn-outline-secondary" title="Visualizar">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <button class="btn btn-sm btn-outline-primary" onclick="abrirEdicaoManifesto('{{ m.id }}')" title="Editar">
+                                    <i class="bi bi-pencil-square"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center py-4 text-muted">Nenhum manifesto encontrado.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+
+
+<script>
+    function abrirEdicaoManifesto(id) {
+        // Lógica futura para abrir modal de edição
+        alert("Em breve: Edição do manifesto " + id);
+    }
+</script>
+{% endblock %}

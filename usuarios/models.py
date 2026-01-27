@@ -68,3 +68,10 @@ def save_user_profile(sender, instance, **kwargs):
     except Motorista.DoesNotExist:
         # Ignora se o perfil ainda não existir (será criado pelo signal 'create_user_profile')
         pass
+
+# Criaçao modelo de filial
+class Filial(models.Model):
+    nome = models.CharField(max_length=100)
+
+    def __str__(self):
+        return self.nome

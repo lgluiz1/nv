@@ -3,6 +3,7 @@
 from django.db import models
 from usuarios.models import Motorista
 from django.utils import timezone
+from usuarios.models import Filial
 
 
 #MANIFESTOBUSCALOG SAO ARMAZENADOS TODOS OS PEDIDOS DE BUSCA DE MANIFESTO REALIZADOS PELO MOTORISTA, CASO ELE NAO INICIE VIAGEM A OUTRA VEZ Q ELE BUSCA NUMERO DO MANIFESTO ESSA TABELA DEVER SER ATUALIZADA COM O NOVO PEDIDO DE BUSCA
@@ -83,6 +84,15 @@ class Manifesto(models.Model):
         verbose_name="Motorista"
     )
 
+    filial = models.ForeignKey(
+        Filial,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='manifestos',
+        verbose_name="Filial"
+    )
+    
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,

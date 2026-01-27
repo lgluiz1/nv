@@ -1,31 +1,31 @@
 from django.shortcuts import redirect
 from django.contrib import messages
 from functools import wraps
+from django.core.exceptions import ObjectDoesNotExist
 
+
+# usuarios/decorators.py
+from django.shortcuts import redirect
+from functools import wraps
+
+# usuarios/decorators.py
+from django.shortcuts import redirect
+from functools import wraps
 
 def apenas_operacional(view_func):
-    """
-    Decorator para garantir que apenas usuários com o tipo_usuario 'OPERACIONAL'
-    possam acessar determinadas views.
-    """
     @wraps(view_func)
     def _wrapped_view(request, *args, **kwargs):
-        # 1. Verifica se o usuário está logado
+        # Se não está logado, vai para o login real
         if not request.user.is_authenticated:
-            return redirect('login_operacional') # Redireciona para sua página de login
+            return redirect('/login/')
 
-        # 2. Verifica se o perfil existe e se é do tipo OPERACIONAL
-        # Usando o related_name 'motorista_perfil' que está no seu model
-        try:
-            if request.user.motorista_perfil.tipo_usuario == 'OPERACIONAL':
-                return view_func(request, *args, **kwargs)
-            else:
-                # Se for MOTORISTA tentando acessar área administrativa
-                messages.error(request, "Acesso negado. Esta área é restrita à equipe operacional.")
-                return redirect('app_home') # Redireciona para o App do motorista
-        except Exception:
-            # Caso o usuário não tenha um perfil vinculado
-            messages.error(request, "Usuário sem perfil operacional vinculado.")
-            return redirect('login_operacional')
-
+        # Verifica apenas a permissão. 
+        # Se a view der erro (tipo Manifesto 404), o Django deve mostrar o erro, 
+        # e não te deslogar.
+        if hasattr(request.user, 'motorista_perfil') and \
+           request.user.motorista_perfil.tipo_usuario == 'OPERACIONAL':
+            return view_func(request, *args, **kwargs)
+        
+        # Se for motorista, manda para o app
+        return redirect('/app/')
     return _wrapped_view
