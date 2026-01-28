@@ -2,6 +2,8 @@
 from django.urls import path
 from operacional.views import DashboardView, login_operacional_view, NotasFiscaisListView ,detalhes_nota_fiscal_view, ManifestosMonitoramentoView
 from operacional.rotas import buscar_e_importar_nfe, listar_manifestos_select, sincronizar_nota_tms_view
+from operacional import views
+
 app_name = 'operacional'
 
 
@@ -16,5 +18,7 @@ urlpatterns = [
     path('manifesto/', ManifestosMonitoramentoView.as_view(), name='manifesto_detalhes'),
     path('api/manifesto/sincronizar-nota/<int:nota_id>/', sincronizar_nota_tms_view, name='sincronizar_nota_tms'),
     path('api/manifesto/listar-para-select/', listar_manifestos_select, name='listar_manifestos_select'),
-
+    path('api/manifesto/detalhes-modal/<int:manifesto_id>/', views.detalhes_manifesto_modal_view, name='detalhes_manifesto_modal'),
+    path('api/manifesto/editar-modal/<int:manifesto_id>/', views.editar_manifesto_modal_view, name='editar_manifesto_modal'),
+    path('api/manifesto/salvar-edicao/<int:manifesto_id>/', views.salvar_edicao_manifesto_view, name='salvar_edicao_manifesto'),
 ]

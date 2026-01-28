@@ -9,11 +9,13 @@ import json
 from django.views.generic import TemplateView
 from django.utils.decorators import method_decorator
 from django.contrib.auth.decorators import login_required
+from django.db.models.functions import ExtractHour
 from usuarios.decorators import apenas_operacional
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Count, Q, Sum
 from django.views.generic import ListView
+from collections import defaultdict
 
 def login_operacional_view(request):
     # ✅ NOVO: Se o usuário já estiver logado e for OPERACIONAL, manda direto pro dashboard
@@ -132,24 +134,25 @@ class DashboardView(TemplateView):
 
         # --- 3. DADOS DO GRÁFICO (ENTREGAS POR HORA) ---
         # Agrupamos as baixas de hoje por hora
-        baixas_hoje = (
-            BaixaNF.objects.filter(data_baixa__range=(hoje_inicio, hoje_fim))
-            .extra(select={'hora': "HOUR(data_baixa)"})
-            .values('hora')
-            .annotate(qtd=Count('id'))
-            .order_by('hora')
+        from collections import defaultdict
+
+        baixas_hoje = BaixaNF.objects.filter(
+            data_baixa__range=(hoje_inicio, hoje_fim)
         )
 
-        # Preparamos listas para o Chart.js
-        # Criamos um range de 08:00 às 20:00 para o gráfico não ficar vazio
+        contador_por_hora = defaultdict(int)
+
+        for baixa in baixas_hoje:
+            hora_local = timezone.localtime(baixa.data_baixa).hour
+            contador_por_hora[hora_local] += 1
+
         horas_labels = [f"{h:02d}:00" for h in range(8, 21)]
-        valores_dict = {f"{b['hora']:02d}:00": b['qtd'] for b in baixas_hoje}
-        
-        # Acumulamos os valores para criar a linha ascendente igual ao seu print
+
         acumulado = 0
         valores_finais = []
-        for h in horas_labels:
-            acumulado += valores_dict.get(h, 0)
+
+        for h in range(8, 21):
+            acumulado += contador_por_hora.get(h, 0)
             valores_finais.append(acumulado)
 
         context['grafico_labels'] = json.dumps(horas_labels)
@@ -158,6 +161,7 @@ class DashboardView(TemplateView):
         context['titulo'] = "Painel de Controle Operacional"
         context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
         return context
+
 
 
 
@@ -237,7 +241,8 @@ def detalhes_nota_fiscal_view(request, nota_id):
     # Retorna apenas o fragmento HTML para o modal
     return render(request, 'desktop/parciais/detalhes_nota_modal.html', context)
 
-
+import pytz
+from datetime import datetime, time
 # Pagina Manifesto 
 @method_decorator(login_required(login_url='/login/'), name='dispatch')
 @method_decorator(apenas_operacional, name='dispatch')
@@ -249,34 +254,172 @@ class ManifestosMonitoramentoView(ListView):
 
     def get_queryset(self):
         # Otimização: traz motorista e conta as notas em uma única query
-        queryset = Manifesto.objects.select_related('motorista').annotate(
+        queryset = Manifesto.objects.select_related('motorista', 'filial').annotate(
             total_notas=Count('notas_fiscais'),
-            notas_concluidas=Count('notas_fiscais', filter=Q(notas_fiscais__status__in=['BAIXADA', 'OCORRENCIA']))
+            notas_concluidas=Count(
+                'notas_fiscais', 
+                filter=Q(notas_fiscais__status__in=['BAIXADA', 'OCORRENCIA'])
+            )
         ).order_by('-data_criacao')
 
         # Filtros
         filial_id = self.request.GET.get('filial')
         numero = self.request.GET.get('numero')
         motorista = self.request.GET.get('motorista')
-        data = self.request.GET.get('data')
+        data_str = self.request.GET.get('data')
 
         if filial_id:
             queryset = queryset.filter(filial_id=filial_id)
+        
         if numero:
             queryset = queryset.filter(numero_manifesto__icontains=numero)
+        
         if motorista:
             queryset = queryset.filter(motorista__nome_completo__icontains=motorista)
-        if data:
-            queryset = queryset.filter(data_criacao__date=data)
+        
+        if data_str:
+            try:
+                # 1. Converte a string do input (YYYY-MM-DD) para objeto date
+                data_foco = datetime.strptime(data_str.strip(), '%Y-%m-%d').date()
+                
+                # 2. Define o fuso horário de Brasília
+                tz = pytz.timezone('America/Sao_Paulo')
+                
+                # 3. Cria o range: de 00:00:00 até 23:59:59 no horário de Brasília
+                # O Django converterá isso para UTC automaticamente ao consultar o banco
+                inicio_dia = tz.localize(datetime.combine(data_foco, time.min))
+                fim_dia = tz.localize(datetime.combine(data_foco, time.max))
+                
+                # 4. Filtra pelo intervalo (muito mais seguro que __date)
+                queryset = queryset.filter(data_criacao__range=(inicio_dia, fim_dia))
+                
+            except (ValueError, TypeError):
+                pass
 
         return queryset
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # Enviamos a lista de filiais para o select do filtro
-        context['filiais'] = Filial.objects.all() 
-        # Titulo pagina 
+        # Manter os valores dos filtros no contexto para o formulário não resetar
+        context['filiais'] = Filial.objects.all().order_by('nome')
         context['titulo'] = "Monitoramento de Manifestos"
-        # Nome do usuario logado
         context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
+        
+        # Opcional: passa os filtros atuais para o template (útil para manter o estado dos inputs)
+        context['filtro_data'] = self.request.GET.get('data', '')
+        context['filtro_numero'] = self.request.GET.get('numero', '')
+        
         return context
+    
+@login_required
+def detalhes_manifesto_modal_view(request, manifesto_id):
+    # Busca o manifesto e faz o prefetch das notas e baixas para ser rápido
+    from manifesto.models import Manifesto, NotaFiscal
+    from django.db.models import Count, Q
+    from django.shortcuts import get_object_or_404
+
+    manifesto = get_object_or_404(Manifesto, id=manifesto_id)
+    notas = NotaFiscal.objects.filter(manifesto=manifesto)
+    
+    total_notas = notas.count()
+    concluidas = notas.filter(status='BAIXADA').count()
+    
+    # Cálculo da percentagem com segurança para não dividir por zero
+    progresso = (concluidas / total_notas * 100) if total_notas > 0 else 0
+    
+    context = {
+        'manifesto': manifesto,
+        'notas': notas,
+        'total_notas': total_notas,
+        'concluidas': concluidas,
+        'progresso': int(progresso)
+    }
+    return render(request, 'desktop/parciais/detalhes_manifesto_modal.html', context)
+
+@login_required
+def editar_manifesto_modal_view(request, manifesto_id):
+    from manifesto.models import Manifesto, Motorista, Filial
+    
+    manifesto = get_object_or_404(Manifesto, id=manifesto_id)
+    motoristas = Motorista.objects.all().order_by('nome_completo')
+    filiais = Filial.objects.all().order_by('nome')
+    
+    context = {
+        'manifesto': manifesto,
+        'motoristas': motoristas,
+        'filiais': filiais,
+    }
+    return render(request, 'desktop/parciais/editar_manifesto_modal.html', context)
+
+from django.views.decorators.http import require_POST
+
+@login_required
+@require_POST
+def salvar_edicao_manifesto_view(request, manifesto_id):
+    """
+    Processa a atualização dos dados do manifesto via AJAX.
+    Trava campos sensíveis e valida a integridade dos KMs.
+    """
+    manifesto = get_object_or_404(Manifesto, id=manifesto_id)
+    
+    try:
+        # 1. Captura de dados do POST
+        status_post = request.POST.get('status')
+        filial_id = request.POST.get('filial')
+        km_ini_raw = request.POST.get('km_inicial')
+        km_fin_raw = request.POST.get('km_final')
+        foi_finalizado = request.POST.get('finalizado') == 'on'
+
+        # 2. Conversão e Validação de KMs
+        # Substituímos vírgula por ponto para evitar erro de conversão
+        km_inicial = float(km_ini_raw.replace(',', '.')) if km_ini_raw else 0.0
+        km_final = float(km_fin_raw.replace(',', '.')) if km_fin_raw else 0.0
+
+        if km_final > 0 and km_final < km_inicial:
+            return JsonResponse({
+                'success': False, 
+                'message': f'Erro: KM Final ({km_final}) não pode ser menor que o Inicial ({km_inicial}).'
+            }, status=400)
+
+        # 3. Atualização dos campos permitidos
+        manifesto.status = status_post
+        manifesto.km_inicial = km_inicial if km_ini_raw else None
+        manifesto.km_final = km_final if km_fin_raw else None
+        
+        if filial_id:
+            manifesto.filial_id = filial_id
+
+        # 4. Lógica de Status e Datas de Finalização
+        # Se o checkbox de finalizar foi marcado agora
+        if foi_finalizado and not manifesto.finalizado:
+            manifesto.finalizado = True
+            manifesto.data_finalizacao = timezone.now()
+            manifesto.status = 'FINALIZADO'
+        
+        # Se o checkbox foi desmarcado (reabertura de manifesto)
+        elif not foi_finalizado and manifesto.finalizado:
+            manifesto.finalizado = False
+            manifesto.data_finalizacao = None
+            # Se estava FINALIZADO, volta para EM_TRANSPORTE ao reabrir
+            if manifesto.status == 'FINALIZADO':
+                manifesto.status = 'EM_TRANSPORTE'
+
+        # 5. Salva no Banco de Dados
+        manifesto.save()
+
+        return JsonResponse({
+            'success': True, 
+            'message': 'Manifesto atualizado com sucesso!',
+            'novo_status': manifesto.get_status_display()
+        })
+
+    except ValueError:
+        return JsonResponse({
+            'success': False, 
+            'message': 'Erro: Os valores de KM devem ser números válidos.'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'success': False, 
+            'message': f'Erro inesperado: {str(e)}'
+        }, status=500)
