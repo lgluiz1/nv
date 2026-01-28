@@ -275,4 +275,8 @@ class ManifestosMonitoramentoView(ListView):
         context = super().get_context_data(**kwargs)
         # Enviamos a lista de filiais para o select do filtro
         context['filiais'] = Filial.objects.all() 
+        # Titulo pagina 
+        context['titulo'] = "Monitoramento de Manifestos"
+        # Nome do usuario logado
+        context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
         return context

@@ -5,6 +5,9 @@ import requests, json
 from django.views.decorators.csrf import csrf_exempt
 from manifesto.models import NotaFiscal, Manifesto
 from django.shortcuts import get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
+
 
 TOKEN = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
 URL_TMS = "https://quickdelivery.eslcloud.com.br/api/analytics/reports/9873/data"
@@ -100,3 +103,35 @@ def listar_manifestos_select(request):
     ]
     
     return JsonResponse({"sucesso": True, "manifestos": dados})
+
+
+@login_required
+@require_POST # Garante que só aceite chamadas POST (segurança)
+def sincronizar_nota_tms_view(request, nota_id):
+    from manifesto.tasks import enviar_baixa_esl_task
+    try:
+        # 1. Verifica se a nota existe
+        # (Aqui usamos o ID da nota, a task buscará a 'baixa' vinculada)
+        nota = NotaFiscal.objects.get(id=nota_id)
+        
+        # 2. Busca a última baixa dessa nota para enviar
+        baixa = nota.baixa_info.all().last()
+        
+        if not baixa:
+            return JsonResponse({
+                'sucesso': False, 
+                'mensagem': 'Esta nota ainda não possui uma baixa registrada pelo motorista.'
+            }, status=400)
+
+        # 3. Dispara a Task do Celery que faz o envio real e envia e-mail em caso de erro
+        enviar_baixa_esl_task.delay(baixa.id)
+
+        return JsonResponse({
+            'sucesso': True,
+            'mensagem': f'Sincronização da nota {nota.numero_nota} iniciada com sucesso!'
+        })
+
+    except NotaFiscal.DoesNotExist:
+        return JsonResponse({'sucesso': False, 'mensagem': 'Nota não encontrada.'}, status=404)
+    except Exception as e:
+        return JsonResponse({'sucesso': False, 'mensagem': str(e)}, status=500)

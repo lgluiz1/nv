@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.conf import settings
 from usuarios.models import Motorista
 from manifesto.models import Manifesto, NotaFiscal, ManifestoBuscaLog , BaixaNF
+from operacional.tasks import enviar_email_erro_tms_task
 
 import time # Necessário para respeitar os 2 segundos
 
@@ -387,74 +388,63 @@ def buscar_detalhes_esl_interno(chave, numero, token):
 
 
 
-@shared_task(bind=True, max_retries=5)
+from celery import shared_task
+
+@shared_task(bind=True, max_retries=2)
 def enviar_baixa_esl_task(self, baixa_id):
-    
     """
-    Task Inteligente: 
-    1. Ajusta o fuso horário para o registro original.
-    2. Envia foto para 'invoice' se entrega (1 ou 2).
-    3. Envia foto para 'freight' se for outra ocorrência com foto.
+    Task ESL com retry controlado:
+    - Máx 3 tentativas (1 + 2 retries)
+    - Intervalo fixo de 1 minuto
+    - E-mail de erro SOMENTE na falha final
     """
+
     from .models import BaixaNF
-    import requests
     from django.utils import timezone
     from datetime import timezone as dt_timezone
-    from datetime import timedelta
-    
+    import requests
+
     TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
     URL_ESL = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
-    
+
     try:
-        # 1. Busca os dados
         baixa = BaixaNF.objects.select_related(
-            'nota_fiscal', 
-            'ocorrencia', 
+            'nota_fiscal',
+            'ocorrencia',
             'nota_fiscal__manifesto__motorista'
         ).get(id=baixa_id)
-        
+
         nf = baixa.nota_fiscal
         motorista = nf.manifesto.motorista.nome_completo
-        url_foto = baixa.comprovante_foto_url if baixa.comprovante_foto_url else ""
+        url_foto = baixa.comprovante_foto_url or ""
         codigo_ocorrencia = int(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else 1
 
-        # --- AJUSTE DE HORÁRIO ---
-        # Garantimos que a data_baixa seja enviada exatamente como gravada no banco
-        # Formatamos para a string esperada pela ESL
-        # 1. Pegamos a data do banco (que está em UTC/GMT)
-        data_banco = baixa.data_baixa
-
-        # Garante UTC
-        data_utc = data_banco.astimezone(dt_timezone.utc)
-
+        # Data exatamente como registrada (UTC)
+        data_utc = baixa.data_baixa.astimezone(dt_timezone.utc)
         data_ocorrencia_str = data_utc.strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
-        # --- LÓGICA DINÂMICA DE FOTO (INVOICE vs FREIGHT) ---
-        # Se for código 1 (Entregue) ou 2 (Entregue com Ressalva)
+        # Lógica de envio de foto
         if codigo_ocorrencia in [1, 2]:
             invoice_data = {
                 "key": nf.chave_acesso,
                 "delivery_receipt_url": url_foto
             }
-            freight_data = {} # Vazio para entregas normais
+            freight_data = {}
         else:
-            # Se for ocorrência (ausente, recusado, etc) e TIVER foto
             invoice_data = {
                 "key": nf.chave_acesso,
-                "delivery_receipt_url": "" # Não vai na NF-e
+                "delivery_receipt_url": ""
             }
-            # A foto vai para o Frete (CT-e)
             freight_data = {
                 "delivery_receipt_url": url_foto
-            }
+            } if url_foto else {}
 
-        # 3. Monta o payload conforme a regra nova
         payload = {
             "invoice_occurrence": {
                 "receiver": baixa.recebedor or "Nao identificado",
                 "document_number": baixa.documento_recebedor or "",
                 "comments": f"Baixa via App - Motorista: {motorista}. Obs: {baixa.observacao or ''}",
-                "occurrence_at": data_ocorrencia_str, # Horário real da baixa
+                "occurrence_at": data_ocorrencia_str,
                 "occurrence": {
                     "code": codigo_ocorrencia
                 },
@@ -465,35 +455,48 @@ def enviar_baixa_esl_task(self, baixa_id):
             }
         }
 
-        # Se houver dados de frete (ocorrência com foto), adiciona ao payload
         if freight_data:
             payload["invoice_occurrence"]["freight"] = freight_data
 
-        # 4. Envio para a ESL
         headers = {
-            'Content-Type': 'application/json', 
-            'Authorization': f'Bearer {TOKEN}'
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {TOKEN}"
         }
-        
-        response = requests.post(URL_ESL, json=payload, headers=headers, timeout=30)
+
+        response = requests.post(
+            URL_ESL,
+            json=payload,
+            headers=headers,
+            timeout=30
+        )
         response.raise_for_status()
-        
-        # 5. Sucesso
+
+        # ✅ SUCESSO
         baixa.processado_tms = True
-        baixa.data_integracao = timezone.now()
-        baixa.log_erro_tms = "Sucesso: Integrado (Lógica Inteligente de Foto)"
         baixa.integrado_tms = True
+        baixa.data_integracao = timezone.now()
+        baixa.log_erro_tms = "Sucesso: Integrado com ESL"
         baixa.save()
 
     except BaixaNF.DoesNotExist:
-        return f"Erro: Baixa {baixa_id} não encontrada."
+        return f"Baixa {baixa_id} não encontrada"
 
-    except requests.exceptions.RequestException as exc:
-        msg_erro = f"Erro API ESL: {str(exc)}"
-        if exc.response is not None:
-            msg_erro = f"Erro {exc.response.status_code}: {exc.response.text}"
-        
+    except requests.exceptions.HTTPError as exc:
+        status = exc.response.status_code if exc.response else None
+        msg_erro = f"Erro {status}: {exc.response.text if exc.response else str(exc)}"
+
         baixa.log_erro_tms = msg_erro[:500]
         baixa.integrado_tms = False
         baixa.save()
-        raise self.retry(exc=exc, countdown=120)
+
+        # ❌ NÃO RETRYA erro de validação (4xx)
+        if status and 400 <= status < 500:
+            enviar_email_erro_tms_task.delay(baixa_id, msg_erro)
+            raise
+
+        # 🔁 Retry apenas para 5xx
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=60)
+
+        enviar_email_erro_tms_task.delay(baixa_id, msg_erro)
+        return f"Falha definitiva ESL (422): {msg_erro}"

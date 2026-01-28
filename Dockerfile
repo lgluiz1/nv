@@ -9,6 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
 # Instala dependências do sistema
+ 
 RUN apt-get update && apt-get install -y \
     postgresql-client \
     gcc \
@@ -18,6 +19,9 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     default-libmysqlclient-dev \
     build-essential \
+    pkg-config \
+    graphviz \
+    libgraphviz-dev \
     pkg-config \
     # Limpa o cache
     && rm -rf /var/lib/apt/lists/*
