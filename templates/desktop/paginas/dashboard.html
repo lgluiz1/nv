@@ -13,7 +13,7 @@
         </h3>
         <div class="badge bg-dark-subtle text-dark p-2 border">
             <i class="bi bi-arrow-clockwise me-1"></i> 
-            Atualizando em: <span id="refresh-timer" class="fw-bold">5:00</span>
+            <span id="refresh-timer" class="fw-bold">3:00</span>
         </div>
     </div>
 </div>
@@ -130,26 +130,38 @@
 <script>
 
 /* ======================
-   AUTO REFRESH (5 min)
+   AUTO REFRESH (3 min)
 ====================== */
-let tempoRestante = 300;
+let tempoRestante = 180; // Tempo em segundos (3 minutos)
+const display = document.querySelector('#refresh-timer'); // Certifique-se que o ID existe no seu HTML
 
-function atualizarContador() {
-    if (tempoRestante < 0) {
-        window.location.reload();
-        return;
-    }
+function iniciarTimer() {
+    const cronometro = setInterval(() => {
+        let minutos = Math.floor(tempoRestante / 60);
+        let segundos = tempoRestante % 60;
 
-    const min = Math.floor(tempoRestante / 60);
-    const seg = tempoRestante % 60;
-    document.getElementById('refresh-timer').innerText =
-        `${min}:${seg < 10 ? '0' : ''}${seg}`;
+        // Formata para 0:00
+        segundos = segundos < 10 ? '0' + segundos : segundos;
+        
+        if (display) {
 
-    tempoRestante--;
+            display.textContent = `Atualizando em: ${minutos}:${segundos}`;
+        }
+
+        if (tempoRestante <= 0) {
+            clearInterval(cronometro);
+            // Mostra o loading visual se você tiver um elemento de spinner
+            document.querySelector('#loading-overlay')?.classList.remove('d-none');
+            
+            // FORÇA O REFRESH DA PÁGINA
+            window.location.reload(true); 
+        }
+
+        tempoRestante--;
+    }, 1000);
 }
 
-if (window.intervaloRefresh) clearInterval(window.intervaloRefresh);
-window.intervaloRefresh = setInterval(atualizarContador, 1000);
+document.addEventListener('DOMContentLoaded', iniciarTimer);
 
 /* ======================
    GRÁFICO ENTREGAS
