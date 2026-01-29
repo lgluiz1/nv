@@ -16,76 +16,102 @@ URL_TMS = "https://quickdelivery.eslcloud.com.br/api/analytics/reports/9873/data
 @csrf_exempt
 @require_http_methods(["POST"])
 def buscar_e_importar_nfe(request):
-    data = json.loads(request.body)
-    numero = data.get('numero')
-    cnpj_emissor = data.get('cnpj_emissor')
-    chave = data.get('chave')
-    manifesto_id = data.get('manifesto_id') # Recebido apenas no momento de salvar
+    import re
+    try:
+        data = json.loads(request.body)
+        numero = data.get('numero')
+        cnpj_emissor_input = data.get('cnpj_emissor') # Ex: "27.718.125/0001-08"
+        chave = data.get('chave')
+        manifesto_id = data.get('manifesto_id')
 
-    # 1. BUSCA LOCAL PRIMEIRO
-    if chave:
-        nota_local = NotaFiscal.objects.filter(chave_acesso=chave).first()
-    else:
-        # Busca por número e tenta cruzar com o emissor se você tiver esse dado no banco
-        nota_local = NotaFiscal.objects.filter(numero_nota=numero).first()
+        # Função interna para deixar apenas números no CNPJ
+        def limpar_documento(doc):
+            return re.sub(r'\D', '', str(doc)) if doc else ""
 
-    if nota_local and not manifesto_id: # Se achou local e só está buscando dados
-        return JsonResponse({
-            "sucesso": True,
-            "origem": "local",
-            "dados": {
-                "numero": nota_local.numero_nota,
-                "chave": nota_local.chave_acesso,
-                "destinatario": nota_local.destinatario,
-                "endereco": nota_local.endereco_entrega
-            }
-        })
+        cnpj_busca = limpar_documento(cnpj_emissor_input)
 
-    # 2. BUSCA NO TMS (Caso não tenha achado local ou queira salvar)
-    if not manifesto_id:
-        payload = {
-            "search": {
-                "invoices": {
-                    "number": int(numero) if numero else None,
-                    "issue_date": "2024-01-01 - 2050-12-31" 
+        # 1. BUSCA LOCAL
+        if chave:
+            nota_local = NotaFiscal.objects.filter(chave_acesso=chave).first()
+        else:
+            nota_local = NotaFiscal.objects.filter(numero_nota=numero).first()
+
+        if nota_local and not manifesto_id:
+            return JsonResponse({
+                "sucesso": True,
+                "origem": "local",
+                "dados": {
+                    "numero": nota_local.numero_nota,
+                    "chave": nota_local.chave_acesso,
+                    "destinatario": nota_local.destinatario,
+                    "endereco": nota_local.endereco_entrega
                 }
-            },
-            "page": "1", "per": "100"
-        }
-        try:
-            res = requests.get(URL_TMS, headers={"Authorization": f"Bearer {TOKEN}"}, data=json.dumps(payload), timeout=20)
-            if res.status_code == 200:
-                dados = res.json()
-                for nf in dados:
-                    # Filtro por Chave (se informada) ou por CNPJ Emissor
-                    if (chave and nf.get('key') == chave) or (not chave and str(nf.get('issuer_document')).replace('.','').replace('-','') == cnpj_emissor):
-                        return JsonResponse({
-                            "sucesso": True, 
-                            "origem": "tms", 
-                            "dados": {
-                                "numero": nf.get('number'),
-                                "chave": nf.get('key'),
-                                "destinatario": nf.get('receiver_name'),
-                                "endereco": nf.get('receiver_address')
-                            }
-                        })
-                return JsonResponse({"sucesso": False, "mensagem": "Nota não encontrada no TMS."}, status=404)
-        except Exception as e:
-            return JsonResponse({"sucesso": False, "mensagem": str(e)}, status=500)
+            })
 
-    # 3. SALVAR NO MANIFESTO (Quando manifesto_id é enviado)
-    else:
-        manifesto = get_object_or_404(Manifesto, id=manifesto_id)
-        # Lógica de criação no banco conforme seu Model
-        nova_nota = NotaFiscal.objects.create(
-            manifesto=manifesto,
-            numero_nota=data.get('numero'),
-            chave_acesso=data.get('chave'),
-            destinatario=data.get('destinatario'),
-            endereco_entrega=data.get('endereco'),
-            status='PENDENTE'
-        )
-        return JsonResponse({"sucesso": True, "mensagem": "Nota vinculada com sucesso!"})
+        # 2. BUSCA NO TMS E FILTRAGEM
+        if not manifesto_id:
+            # URL e Token que você testou no script raw
+            URL_TMS = "https://quickdelivery.eslcloud.com.br/api/analytics/reports/9873/data"
+            TOKEN = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
+
+            payload = {
+                "search": {
+                    "invoices": {
+                        "issue_date": "2024-01-01 - 2050-12-31",
+                        "number": int(numero) if numero else None
+                    }
+                },
+                "page": "1", "per": "100"
+            }
+
+            res = requests.get(URL_TMS, 
+                               headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}, 
+                               data=json.dumps(payload), 
+                               timeout=20)
+
+            if res.status_code == 200:
+                dados_api = res.json() # Isso é a lista []
+                
+                nota_encontrada = None
+                for nf in dados_api:
+                    # O segredo está aqui: ioe_iur_document é o CNPJ do emissor no seu JSON
+                    cnpj_emissor_api = limpar_documento(nf.get('ioe_iur_document'))
+
+                    if (chave and nf.get('key') == chave) or (not chave and cnpj_emissor_api == cnpj_busca):
+                        nota_encontrada = nf
+                        break
+                
+                if nota_encontrada:
+                    return JsonResponse({
+                        "sucesso": True,
+                        "origem": "tms",
+                        "dados": {
+                            "numero": nota_encontrada.get('number'),
+                            "chave": nota_encontrada.get('key'),
+                            "destinatario": nota_encontrada.get('ioe_rpt_name'),
+                            "endereco": f"{nota_encontrada.get('ioe_rpt_mds_line_1')}, {nota_encontrada.get('ioe_rpt_mds_number')}"
+                        }
+                    })
+                
+                return JsonResponse({"sucesso": False, "mensagem": "Nota encontrada com esse número, mas o CNPJ emissor não confere."}, status=404)
+            
+            return JsonResponse({"sucesso": False, "mensagem": f"Erro na API TMS: {res.status_code}"}, status=res.status_code)
+
+        # 3. SALVAR
+        else:
+            manifesto = get_object_or_404(Manifesto, id=manifesto_id)
+            nova_nota = NotaFiscal.objects.create(
+                manifesto=manifesto,
+                numero_nota=data.get('numero'),
+                chave_acesso=data.get('chave'),
+                destinatario=data.get('destinatario'),
+                endereco_entrega=data.get('endereco'),
+                status='PENDENTE'
+            )
+            return JsonResponse({"sucesso": True, "mensagem": "Nota vinculada ao manifesto com sucesso!"})
+
+    except Exception as e:
+        return JsonResponse({"sucesso": False, "mensagem": str(e)}, status=500)
     
 from django.http import JsonResponse
 from manifesto.models import Manifesto

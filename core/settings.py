@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     
     # Terceiros
     'rest_framework',
+    'rest_framework.authtoken',
     'rest_framework_simplejwt', # Adicionado para JWT
     'rest_framework_simplejwt.token_blacklist',
     'django_celery_beat',
@@ -126,7 +127,7 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'st63136_entregas_quickdelivery',
+        'NAME': 'st63136_dev_app_transportadora',
         'USER': 'st63136_quickdelivery',
         'PASSWORD': 'Qu1ck.2026',
         'HOST': 'st63136.ispot.cc',  # 👈 DEVE SER O DOMÍNIO OU IP DA INTERSERVER
@@ -204,6 +205,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         # Usa JWT como método primário de autenticação
         'rest_framework_simplejwt.authentication.JWTAuthentication', 
+        'rest_framework.authentication.TokenAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         # Exige autenticação por padrão (pode ser sobrescrito nas Views)

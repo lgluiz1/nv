@@ -12,6 +12,7 @@ from manifesto.rotas.motorista_perfil import perfil_motorista
 from manifesto.views import ManifestoFinalizacaoView
 from manifesto.rotas.historicomanifestos import HistoricoManifestosView
 from manifesto.rotas.sincronizarmanifesto import SincronizarManifestoView
+from manifesto.rotas.webhook import webhook_tms_esl
 
 urlpatterns = [
     path('manifesto/busca/', BuscarManifestoView.as_view()),
@@ -26,5 +27,6 @@ urlpatterns = [
     path('motorista/perfil/', perfil_motorista, name='motorista_perfil'),
     path('manifesto/finalizar/', ManifestoFinalizacaoView.as_view()),
     path('manifesto/sincronizar/', SincronizarManifestoView.as_view()),
+    path('webhook/tms-esl/', webhook_tms_esl, name='webhook_tms_esl'),
 
 ]
