@@ -96,13 +96,13 @@
 </head>
 <body>
 
-    <nav id="sidebar">
+    <nav id="sidebar" class="d-flex flex-column vh-100">
     <div class="p-3 text-white d-flex align-items-center">
         <i class="bi bi-box-seam fs-3 me-3"></i>
         <span class="fw-bold menu-text">QUICK DELIVERY</span>
     </div>
     
-    <div class="nav flex-column mt-2">
+    <div class="nav flex-column mt-2 flex-grow-1">
         <a href="/dashboard/" class="nav-link active-menu">
             <i class="bi bi-grid-1x2"></i>
             <span class="menu-text">Dashboard</span>
@@ -115,13 +115,24 @@
             <i class="bi bi-layers"></i>
             <span class="menu-text">Manifestos</span>
         </a>
-        <a href="/motoristas/" class="nav-link">
+        <a href="{% url 'operacional:motoristas' %}" class="nav-link">
             <i class="bi bi-people"></i>
             <span class="menu-text">Motoristas</span>
         </a>
-        <a href="/motoristas/" class="nav-link">
+        <a href="#" class="nav-link">
             <i class="bi bi-bank"></i>
             <span class="menu-text">Financeiro</span>
+        </a>
+    </div>
+
+    <div class="nav flex-column mb-3 border-top border-secondary pt-2">
+        <a href="#" class="nav-link">
+            <i class="bi bi-gear"></i>
+            <span class="menu-text">Configurações</span>
+        </a>
+        <a href="/logout/" class="nav-link text-danger-emphasis">
+            <i class="bi bi-box-arrow-right"></i>
+            <span class="menu-text">Sair do Sistema</span>
         </a>
     </div>
 </nav>

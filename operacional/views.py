@@ -13,7 +13,7 @@ from django.db.models.functions import ExtractHour
 from usuarios.decorators import apenas_operacional
 from django.utils import timezone
 from datetime import timedelta
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Q, Sum, Avg, ExpressionWrapper, FloatField
 from django.views.generic import ListView
 from collections import defaultdict
 
@@ -58,7 +58,21 @@ def login_operacional_view(request):
             # 3. Lógica de Cadastro de Senha
             if acao == 'cadastrar':
                 if not perfil.user:
+                    # 1. Cria o usuário com o CPF como username
                     user = User.objects.create_user(username=cpf, password=senha)
+                    
+                    # 2. Pega o primeiro nome do campo nome_completo da tabela Motorista
+                    if perfil.nome_completo:
+                        user.first_name = perfil.nome_completo.split()[0]
+                        # Opcional: Se quiser salvar o restante no last_name
+                        nomes = perfil.nome_completo.split()
+                        if len(nomes) > 1:
+                            user.last_name = " ".join(nomes[1:])
+                    
+                    # 3. SALVA o objeto user (Isso é o que estava faltando!)
+                    user.save()
+                    
+                    # 4. Vincula ao perfil do motorista
                     perfil.user = user
                     perfil.save()
                 else:
@@ -80,6 +94,11 @@ def login_operacional_view(request):
         except Exception as e:
             return JsonResponse({'status': 'erro', 'message': str(e)}, status=500)
 
+# logout do operacional
+from django.contrib.auth import logout
+def logout_operacional_view(request):
+    logout(request)
+    return redirect('/login/')
 
 @method_decorator(login_required, name='dispatch')
 @method_decorator(apenas_operacional, name='dispatch')
@@ -423,3 +442,114 @@ def salvar_edicao_manifesto_view(request, manifesto_id):
             'success': False, 
             'message': f'Erro inesperado: {str(e)}'
         }, status=500)
+    
+
+class MotoristasPerformanceView(ListView):
+    model = Motorista
+    template_name = 'desktop/paginas/motoristas_list.html'
+    context_object_name = 'motoristas'
+
+    def get_queryset(self):
+        # 1. Captura as datas do filtro (GET)
+        self.data_inicio = self.request.GET.get('data_inicio')
+        self.data_fim = self.request.GET.get('data_fim')
+
+        # 2. Criamos o filtro dinâmico para as anotações
+        # Filtramos pela data da baixa (quando a entrega realmente aconteceu)
+        filtros_periodo = Q()
+        if self.data_inicio:
+            filtros_periodo &= Q(manifestos__notas_fiscais__baixa_info__data_baixa__date__gte=self.data_inicio)
+        if self.data_fim:
+            filtros_periodo &= Q(manifestos__notas_fiscais__baixa_info__data_baixa__date__lte=self.data_fim)
+
+        # 3. Query principal com anotações filtradas
+        queryset = Motorista.objects.annotate(
+            # Total de notas no período
+            total_notas=Count(
+                'manifestos__notas_fiscais',
+                filter=filtros_periodo
+            ),
+            
+            # Notas baixadas com sucesso no período
+            baixas_sucesso=Count(
+                'manifestos__notas_fiscais', 
+                filter=filtros_periodo & Q(manifestos__notas_fiscais__status='BAIXADA')
+            ),
+            
+            # Ocorrências 20 (Falta de tempo) no período
+            ocorrencias_20=Count(
+                'manifestos__notas_fiscais', 
+                filter=filtros_periodo & Q(manifestos__notas_fiscais__baixa_info__ocorrencia__codigo_tms='20')
+            ),
+            
+            # Total de manifestos distintos no período
+            total_mfts=Count(
+                'manifestos', 
+                distinct=True,
+                filter=filtros_periodo
+            )
+        )
+        
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # 4. Cálculo de Reputação (Score)
+        motoristas_com_score = []
+        for m in context['motoristas']:
+            if m.total_notas > 0:
+                base_score = (m.baixas_sucesso / m.total_notas) * 100
+                penalidade = (m.ocorrencias_20 * 15) # Aumentei a penalidade para a ocorrência 20
+                m.reputacao = max(0, int(base_score - penalidade))
+            else:
+                m.reputacao = 0
+            motoristas_com_score.append(m)
+        
+        # 5. Reordenar pelo Score (Reputação) para o Pódio bater com os dados
+        context['motoristas'] = sorted(motoristas_com_score, key=lambda x: x.reputacao, reverse=True)
+        
+        # 6. Dados extras para o template
+        context['titulo'] = "Performance de Motoristas"
+        context['data_inicio'] = self.data_inicio
+        context['data_fim'] = self.data_fim
+        context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
+        return context
+    
+@require_POST
+def motorista_cadastrar(request):
+    import re
+    try:
+        nome = request.POST.get('nome_completo')
+        cpf_sujo = request.POST.get('cpf')
+        foto = request.FILES.get('foto_perfil')
+
+        # Remove tudo que não for número (limpa pontos e traços)
+        cpf_limpo = re.sub(r'\D', '', cpf_sujo)
+
+        Motorista.objects.create(
+            nome_completo=nome,
+            cpf=cpf_limpo,
+            foto_perfil=foto
+        )
+        return JsonResponse({'success': True, 'message': 'Motorista cadastrado com sucesso!'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'Erro ao cadastrar: {str(e)}'})
+
+@require_POST
+def motorista_editar(request):
+    import re
+    try:
+        id_m = request.POST.get('motorista_id')
+        motorista = get_object_or_404(Motorista, id=id_m)
+        
+        motorista.nome_completo = request.POST.get('nome_completo')
+        motorista.cpf = request.POST.get('cpf')
+        
+        if request.FILES.get('foto_perfil'):
+            motorista.foto_perfil = request.FILES.get('foto_perfil')
+            
+        motorista.save()
+        return JsonResponse({'success': True, 'message': 'Dados atualizados com sucesso!'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'Erro ao editar: {str(e)}'})

@@ -1,6 +1,6 @@
 # operacional/urls.py
 from django.urls import path
-from operacional.views import DashboardView, login_operacional_view, NotasFiscaisListView ,detalhes_nota_fiscal_view, ManifestosMonitoramentoView
+from operacional.views import DashboardView, login_operacional_view, NotasFiscaisListView ,detalhes_nota_fiscal_view, ManifestosMonitoramentoView, MotoristasPerformanceView
 from operacional.rotas import buscar_e_importar_nfe, listar_manifestos_select, sincronizar_nota_tms_view
 from operacional import views
 
@@ -11,7 +11,7 @@ urlpatterns = [
     # Coloque o login na raiz ou em /login/
     path('login/', login_operacional_view, name='login_operacional'),
     path('dashboard/', DashboardView.as_view(), name='dashboard'),
-
+    path('logout/', views.logout_operacional_view, name='logout_operacional'),
     path('notas-fiscais/', NotasFiscaisListView.as_view(), name='notas_fiscais'),
     path('api/manifesto/detalhes-nota/<int:nota_id>/', detalhes_nota_fiscal_view, name='detalhes_nota_fiscal'),
     path('api/manifesto/buscar-importar/', buscar_e_importar_nfe, name='buscar_e_importar_nfe'),
@@ -21,4 +21,7 @@ urlpatterns = [
     path('api/manifesto/detalhes-modal/<int:manifesto_id>/', views.detalhes_manifesto_modal_view, name='detalhes_manifesto_modal'),
     path('api/manifesto/editar-modal/<int:manifesto_id>/', views.editar_manifesto_modal_view, name='editar_manifesto_modal'),
     path('api/manifesto/salvar-edicao/<int:manifesto_id>/', views.salvar_edicao_manifesto_view, name='salvar_edicao_manifesto'),
+    path('motoristas/', MotoristasPerformanceView.as_view(), name='motoristas'),
+    path('motoristas/cadastrar/', views.motorista_cadastrar, name='motorista_cadastrar'),
+    path('motoristas/editar/', views.motorista_editar, name='motorista_editar'),
 ]
