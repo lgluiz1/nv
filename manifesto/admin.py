@@ -3,10 +3,109 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin
 from .models import (
     Manifesto, NotaFiscal, Ocorrencia, BaixaNF, 
-    HistoricoOcorrencia, ManifestoBuscaLog
+    HistoricoOcorrencia, ManifestoBuscaLog, WebhookEventoManifestoESL
 )
 from manifesto.tasks import enviar_baixa_esl_task
 
+@admin.register(WebhookEventoManifestoESL)
+class WebhookEventoManifestoESLAdmin(admin.ModelAdmin):
+
+    # 📋 LISTAGEM
+    list_display = (
+        "id",
+        "origem",
+        "tipo",
+        "numero_manifesto",
+        "status_badge",
+        "created_at",
+        "processed_at",
+    )
+
+    # 🔍 FILTROS
+    list_filter = (
+        "origem",
+        "tipo",
+        "status",
+        "created_at",
+    )
+
+    # 🔎 BUSCA
+    search_fields = (
+        "numero_manifesto",
+        "tipo",
+        "origem",
+        "payload",
+        "erro",
+    )
+
+    # 🔒 SOMENTE LEITURA
+    readonly_fields = (
+        "origem",
+        "tipo",
+        "numero_manifesto",
+        "created_at",
+        "processed_at",
+        "payload_formatado",
+        "erro",
+    )
+
+    # 📂 ORGANIZAÇÃO DO FORM
+    fieldsets = (
+        ("Identificação", {
+            "fields": ("origem", "tipo", "numero_manifesto", "status")
+        }),
+        ("Payload recebido", {
+            "fields": ("payload_formatado",),
+        }),
+        ("Processamento", {
+            "fields": ("erro", "created_at", "processed_at"),
+        }),
+    )
+
+    # ⬇️ ORDENAR
+    ordering = ("-created_at",)
+
+    # ⚙️ AÇÕES
+    actions = ["marcar_como_processado", "marcar_como_erro"]
+
+    # 🎨 STATUS COM COR
+    def status_badge(self, obj):
+        cores = {
+            "PENDENTE": "#f0ad4e",
+            "PROCESSADO": "#5cb85c",
+            "ERRO": "#d9534f",
+        }
+        cor = cores.get(obj.status, "#777")
+        return format_html(
+            '<span style="color: white; background-color: {}; padding: 4px 8px; border-radius: 6px;">{}</span>',
+            cor,
+            obj.status
+        )
+    status_badge.short_description = "Status"
+
+    # 🧾 JSON FORMATADO
+    def payload_formatado(self, obj):
+        try:
+            return format_html(
+                "<pre style='max-height:500px; overflow:auto'>{}</pre>",
+                json.dumps(obj.payload, indent=2, ensure_ascii=False)
+            )
+        except Exception:
+            return obj.payload
+
+    payload_formatado.short_description = "Payload (JSON)"
+
+    # ⚙️ AÇÕES
+    def marcar_como_processado(self, request, queryset):
+        queryset.update(
+            status="PROCESSADO",
+            processed_at=timezone.now()
+        )
+    marcar_como_processado.short_description = "Marcar como PROCESSADO"
+
+    def marcar_como_erro(self, request, queryset):
+        queryset.update(status="ERRO")
+    marcar_como_erro.short_description = "Marcar como ERRO"
 @admin.register(Manifesto)
 class ManifestoAdmin(ModelAdmin):
     # 'veiculo' foi removido pois não existe no seu model Manifesto

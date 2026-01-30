@@ -4,12 +4,14 @@ from django.db import models
 from usuarios.models import Motorista
 from django.utils import timezone
 from usuarios.models import Filial
+from django.utils.html import format_html
 
 
 #MANIFESTOBUSCALOG SAO ARMAZENADOS TODOS OS PEDIDOS DE BUSCA DE MANIFESTO REALIZADOS PELO MOTORISTA, CASO ELE NAO INICIE VIAGEM A OUTRA VEZ Q ELE BUSCA NUMERO DO MANIFESTO ESSA TABELA DEVER SER ATUALIZADA COM O NOVO PEDIDO DE BUSCA
 class WebhookEventoManifestoESL(models.Model):
     origem = models.CharField(max_length=50, default="ESL")
     tipo = models.CharField(max_length=50)
+    numero_manifesto = models.CharField(max_length=50 , null=True, blank=True)
     payload = models.JSONField()
     status = models.CharField(
         max_length=20,
