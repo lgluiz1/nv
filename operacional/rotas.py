@@ -104,8 +104,10 @@ def buscar_e_importar_nfe(request):
                 manifesto=manifesto,
                 numero_nota=data.get('numero'),
                 chave_acesso=data.get('chave'),
-                destinatario=data.get('destinatario'),
-                endereco_entrega=data.get('endereco'),
+                # salva destinação sempre maiuscula
+                destinatario=data.get('destinatario').upper() if data.get('destinatario') else None,
+                # salva endereço sempre maiusculo
+                endereco_entrega=data.get('endereco').upper() if data.get('endereco') else None,
                 status='PENDENTE'
             )
             return JsonResponse({"sucesso": True, "mensagem": "Nota vinculada ao manifesto com sucesso!"})

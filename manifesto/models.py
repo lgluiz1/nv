@@ -7,6 +7,18 @@ from usuarios.models import Filial
 
 
 #MANIFESTOBUSCALOG SAO ARMAZENADOS TODOS OS PEDIDOS DE BUSCA DE MANIFESTO REALIZADOS PELO MOTORISTA, CASO ELE NAO INICIE VIAGEM A OUTRA VEZ Q ELE BUSCA NUMERO DO MANIFESTO ESSA TABELA DEVER SER ATUALIZADA COM O NOVO PEDIDO DE BUSCA
+class WebhookEventoManifestoESL(models.Model):
+    origem = models.CharField(max_length=50, default="ESL")
+    tipo = models.CharField(max_length=50)
+    payload = models.JSONField()
+    status = models.CharField(
+        max_length=20,
+        default="PENDENTE"
+    )
+    erro = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
 class ManifestoBuscaLog(models.Model):
     STATUS_CHOICES = (
         ('AGUARDANDO', 'Aguardando'),
@@ -92,7 +104,7 @@ class Manifesto(models.Model):
         related_name='manifestos',
         verbose_name="Filial"
     )
-    
+
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,

@@ -27,6 +27,6 @@ urlpatterns = [
     path('motorista/perfil/', perfil_motorista, name='motorista_perfil'),
     path('manifesto/finalizar/', ManifestoFinalizacaoView.as_view()),
     path('manifesto/sincronizar/', SincronizarManifestoView.as_view()),
-    path('webhook/tms-esl/', webhook_tms_esl, name='webhook_tms_esl'),
+    path('manifesto/webhook/tms-esl/', webhook_tms_esl, name='webhook_tms_esl'),
 
 ]
