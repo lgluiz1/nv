@@ -56,10 +56,12 @@ def webhook_tms_esl(request):
         )
 
     # 📩 RECEBE WEBHOOK
+    numero_manifesto = request.data.get("manifesto_numero")    
     payload = request.data
 
     WebhookEventoManifestoESL.objects.create(
         tipo=payload.get("tipo", "desconhecido"),
+        numero_manifesto=numero_manifesto,
         payload=payload
     )
 
