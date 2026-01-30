@@ -22,22 +22,74 @@ def webhook_tms_esl(request):
                 "Authorization": "Token SEU_TOKEN_AQUI",
                 "Content-Type": "application/json"
             },
-            "exemplo_payload": {
-                "tipo": "COLETA | ENTREGA | DESPACHO | TRANSFERENCIA",
-                "manifesto": 123456,
-                "evento": "PICK_CREATED | MANIFEST_STARTED | MANIFEST_CLOSED",
-                "origem": "ESL",
-                "referencias": {
-                    "pick_id": 987,
-                    "cte": "123456789",
-                    "nfe": "35123456789012345678901234567890123456789012"
-                },
-                "data": {
-                    "status": "CRIADO",
-                    "data_evento": "2026-01-30T10:22:00Z",
-                    "usuario": "sistema"
+            "exemplo_payload": "siga o exemplo abaixo",
+            "exemplo":
+            {
+            "manifesto_numero": 777888,"obrigatorio": True,
+            "tipo": "Tipo Manifesto","obrigatorio": True,
+            "dados": {
+                "manifesto_id": "id interna do tms manifesto",
+                "manifesto_numero": 777888,
+                "manifesto_data_emissao": "2025-08-23",
+                "filial_origem": "Filial A",
+                "previsao_saida": "2025-08-25T12:00:00Z",
+                "previsao_entrega": "2025-08-30",
+                "observacoes_operacionais": "",
+                "manifesto_tipo": [
+                {"tipo": "C(coleta), E(entrega), T(tranferencia), D(despacho)"}
+                ],
+                "qtd_volumes": 10,
+                "qtd_destinos": 5,
+                "qtd_notas": 15,
+                "peso_total": 1500.75,
+                "peso_taxado": 1600,
+                "valor_total": 25000.50,
+
+                "notas": [
+                {"numero_nota": 123456789, 
+                "serie_nota": 1, 
+                "chave_nota": "12345678901234567890123456789012345678901234", 
+                "data_emissao_nota": "2025-08-20",
+                "sla": "2025-08-22",
+                "tipo": "E(entrega), T(tranferencia), D(despacho)",
+                "cte_numero": "Numero_CTE",
+                "cte_key": "Chave CTe",
+                "minuta": "numero da minuta se ouver",
+                "emissor_documento": "emissor_documento",
+                "destinatario_nome" : "destinatario_nome",
+                "destinatario_doc": "destinatario_doc",
+                "destinatario_numero": "10",
+                "destinatario_rua": "Rua do Destinatario",
+                "destinatario_cep": "00000-000",
+                "destinatario_bairro": "bairro do destinatario",
+                "destinatario_municipio": "municipio do destinatario",
+                "destinatario_estado": "rj"
                 }
+                ],
+                "coleta": [
+                {"numero_coleta": 123456789,
+                "solicitante_usuario": "João Silva",
+                "data_solicitacao": "2025-08-20",
+                "hora_solicitacao": "12:55",
+                "local_coleta": "empresa onde sera coleta ",
+                "rua": "Endereço da coleta ",
+                "numero": "numero Local de coleta",
+                "cidade": "cidade Local de coleta",
+                "cep": "cep local de coleta",
+                "municipio": "municipio local de coleta",
+                "telefone": "numero telefone local de coleta"     
+                }
+                ],
+                "motorista": [
+                {"nome": "nome motorista",
+                "cpf": "cpf motorista"         
+                }
+                ]
+                
             }
+            }
+
+            
         })
 
     # 🔐 VALIDA TOKEN MANUALMENTE NO POST
