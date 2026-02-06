@@ -216,8 +216,9 @@ def iniciar_transporte_manifesto_tms_task(self, numero_manifesto):
 
 @shared_task(bind=True, max_retries=3)
 def buscar_manifesto_completo_task(self, log_id):
-    from manifesto.models import Manifesto, NotaFiscal, ManifestoBuscaLog # Certifique-se de importar Filial
+    from manifesto.models import Manifesto, NotaFiscal, ManifestoBuscaLog
     from usuarios.models import Filial
+    from django.db import transaction
     import requests
     import json
     import time
@@ -229,7 +230,7 @@ def buscar_manifesto_completo_task(self, log_id):
         token_geral = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
         headers_geral = {"Content-Type": "application/json", "Authorization": f"Bearer {token_geral}"}
 
-        # --- ETAPA 1: VALIDAR MOTORISTA E PEGAR ID INTERNO ---
+        # --- ETAPA 1: VALIDAR MOTORISTA E PEGAR ID INTERNO + CONTADORES ---
         url_valida = "https://quickdelivery.eslcloud.com.br/api/analytics/reports/2972/data"
         payload_busca = {
             "search": {
@@ -248,7 +249,6 @@ def buscar_manifesto_completo_task(self, log_id):
             log.status, log.mensagem_erro = 'ERRO', "Manifesto não encontrado."
             log.save(); return
 
-        # Dados do primeiro registro retornado
         info_tms = dados_mft[0]
 
         # Validação de CPF
@@ -257,23 +257,21 @@ def buscar_manifesto_completo_task(self, log_id):
             log.status, log.mensagem_erro = 'ERRO', "Manifesto não pertence ao seu CPF."
             log.save(); return
 
-        # --- NOVO: LÓGICA DE FILIAL ---
+        # Lógica de Filial
         nome_filial_tms = info_tms.get('mft_crn_psn_nickname', 'MATRIZ').strip().upper()
-        
-        # Busca a filial pelo nome, se não existir, cria
-        filial_obj, created = Filial.objects.get_or_create(
-            nome=nome_filial_tms
-        )
-        if created:
-            logger.info(f"🏢 Nova Filial cadastrada: {nome_filial_tms}")
+        filial_obj, _ = Filial.objects.get_or_create(nome=nome_filial_tms)
 
-        # Criar/Recuperar Manifesto Local (Incluindo a Filial)
+        # Criar/Recuperar Manifesto Local (SALVANDO NOVOS CAMPOS DE CONTAGEM)
         manifesto_obj, _ = Manifesto.objects.update_or_create(
             numero_manifesto=numero_visual,
             defaults={
                 'motorista': motorista, 
-                'filial': filial_obj, # Vinculando a Filial aqui
-                'status': 'EM_TRANSPORTE'
+                'filial': filial_obj,
+                'status': 'EM_TRANSPORTE',
+                'manifesto_id_tms': info_tms.get('id'), # Salvando ID interno
+                'qtd_transferencia': int(info_tms.get('transfer_manifest_items_count', 0)),
+                'qtd_entrega': int(info_tms.get('dispatch_draft_manifest_items_count', 0)),
+                'qtd_retirada': int(info_tms.get('pick_manifest_items_count', 0)),
             }
         )
         
@@ -281,43 +279,57 @@ def buscar_manifesto_completo_task(self, log_id):
         log.status = 'ENRIQUECENDO'
         log.save()
 
-        # --- ETAPA 2: CAPTURAR LISTA DE NOTAS ---
-        # (Mantém sua lógica de notas...)
+        # --- ETAPA 2: CAPTURAR LISTA DE NOTAS E CLASSIFICAR TIPO ---
         token_notas = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
         url_notas = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
         
         params_notas = {"manifest_id": str(id_interno_esl), "per": 20}
         start_cursor = None
-        notas_unicas_dict = {}
+        notas_unicas_dict = {} # Chave -> {numero, tipo}
+        
+        GATILHOS = {'122': 'TRANSFERENCIA', '119': 'DESPACHO', '120': 'ENTREGA', '121': 'RETIRADA'}
 
         while True:
-            if start_cursor:
-                params_notas["start"] = start_cursor
-            else:
-                params_notas.pop("start", None)
-
+            if start_cursor: params_notas["start"] = start_cursor
             res_n = requests.get(url_notas, headers={"Authorization": f"Bearer {token_notas}"}, params=params_notas, timeout=30)
             if res_n.status_code != 200: break
 
             data_n = res_n.json()
             registros = data_n.get("data", [])
-            paging = data_n.get("paging", {})
-
             for item in registros:
-                invoice = item.get("invoice")
-                if invoice and invoice.get("key"):
-                    notas_unicas_dict[invoice["key"]] = invoice["number"]
+                chave = item.get("invoice", {}).get("key")
+                codigo_oc = str(item.get("occurrence", {}).get("code"))
+                id_manifesto_tms = item.get("manifest", {}).get("id") if item.get("manifest") else None
+                
+                if id_manifesto_tms and not manifesto_obj.manifesto_id_tms:
+                    # Se achamos o ID e ele ainda não está no nosso banco, salvamos agora!
+                    manifesto_obj.manifesto_id_tms = str(id_manifesto_tms)
+                    manifesto_obj.save(update_fields=['manifesto_id_tms'])
+                    print(f">>> ID Interno TMS {id_manifesto_tms} vinculado ao manifesto {numero_visual}")
 
-            if paging.get("next_id") is None: break
-            start_cursor = paging["next_id"]
-            time.sleep(2.3)
+                if chave:
+                    # Se for um código de manifesto (119-122), define o tipo. Senão, assume ENTREGA.
+                    tipo_nota = GATILHOS.get(codigo_oc, 'ENTREGA')
+                    
+                    # Guardamos no dicionário para a Etapa 3
+                    if chave not in notas_unicas_dict:
+                        notas_unicas_dict[chave] = {'numero': item["invoice"]["number"], 'tipo': tipo_nota}
+                    elif codigo_oc in GATILHOS:
+                        # Se acharmos um gatilho de manifestação no loop, atualizamos o tipo
+                        notas_unicas_dict[chave]['tipo'] = tipo_nota
 
-        # --- ETAPA 3: ENRIQUECIMENTO NOTA A NOTA ---
-        # (Mantém sua lógica de enriquecimento...)
+            if data_n.get("paging", {}).get("next_id") is None: break
+            start_cursor = data_n["paging"]["next_id"]
+            time.sleep(1.5)
+
+        # --- ETAPA 3: ENRIQUECIMENTO NOTA A NOTA (MANTIDO ORIGINAL) ---
         total_processadas = 0
-        for chave, numero in notas_unicas_dict.items():
+        for chave, dados_base in notas_unicas_dict.items():
             try:
                 time.sleep(2.1)
+                numero = dados_base['numero']
+                tipo_operacao = dados_base['tipo']
+                
                 detalhes = buscar_detalhes_esl_interno(chave, numero, token_geral)
                 
                 destinatario = "DADOS NÃO REPASSADOS PELA ESL"
@@ -347,6 +359,7 @@ def buscar_manifesto_completo_task(self, log_id):
                             'numero_nota': str(numero),
                             'destinatario': destinatario,
                             'endereco_entrega': endereco,
+                            'tipo_operacao': tipo_operacao, # SALVANDO O TIPO IDENTIFICADO
                             'status': status_final
                         }
                     )
@@ -358,7 +371,7 @@ def buscar_manifesto_completo_task(self, log_id):
 
         log.status = 'PROCESSADO'
         log.save()
-        return f"Manifesto {numero_visual} finalizado com {total_processadas} notas na filial {nome_filial_tms}."
+        return f"Manifesto {numero_visual} processado: {total_processadas} notas enriquecidas e classificadas."
 
     except Exception as e:
         logger.error(f"🔴 Erro crítico: {str(e)}")
@@ -392,38 +405,40 @@ from celery import shared_task
 
 @shared_task(bind=True, max_retries=2)
 def enviar_baixa_esl_task(self, baixa_id):
-    """
-    Task ESL com retry controlado:
-    - Máx 3 tentativas (1 + 2 retries)
-    - Intervalo fixo de 1 minuto
-    - E-mail de erro SOMENTE na falha final
-    """
-
     from .models import BaixaNF
     from django.utils import timezone
     from datetime import timezone as dt_timezone
     import requests
+    import json
 
     TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
     URL_ESL = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
 
     try:
+        # Adicionado select_related para o manifesto para pegar o ID interno
         baixa = BaixaNF.objects.select_related(
             'nota_fiscal',
             'ocorrencia',
+            'nota_fiscal__manifesto',
             'nota_fiscal__manifesto__motorista'
         ).get(id=baixa_id)
 
         nf = baixa.nota_fiscal
-        motorista = nf.manifesto.motorista.nome_completo
+        manifesto = nf.manifesto
+        motorista = manifesto.motorista.nome_completo if manifesto.motorista else "Motorista não identificado"
         url_foto = baixa.comprovante_foto_url or ""
         codigo_ocorrencia = int(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else 1
 
-        # Data exatamente como registrada (UTC)
-        data_utc = baixa.data_baixa.astimezone(dt_timezone.utc)
-        data_ocorrencia_str = data_utc.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+        # ID Interno do TMS que você salvou na busca
+        # Certifique-se que o nome do campo no seu model é 'numero_manifesto' 
+        # ou o campo onde você guardou o ID de 6 dígitos da ESL (ex: 296803)
+        tms_manifest_id = manifesto.numero_manifesto 
 
-        # Lógica de envio de foto
+        # Data formatada para o padrão da documentação (ISO 8601 com Offset)
+        data_utc = baixa.data_baixa.astimezone(dt_timezone.utc)
+        data_ocorrencia_str = data_utc.strftime('%Y-%m-%dT%H:%M:%S.000-03:00')
+
+        # Lógica de fotos (Invoice vs Freight)
         if codigo_ocorrencia in [1, 2]:
             invoice_data = {
                 "key": nf.chave_acesso,
@@ -439,6 +454,7 @@ def enviar_baixa_esl_task(self, baixa_id):
                 "delivery_receipt_url": url_foto
             } if url_foto else {}
 
+        # Montagem do Payload conforme a documentação enviada
         payload = {
             "invoice_occurrence": {
                 "receiver": baixa.recebedor or "Nao identificado",
@@ -450,11 +466,12 @@ def enviar_baixa_esl_task(self, baixa_id):
                 },
                 "invoice": invoice_data,
                 "manifest": {
-                    "id": nf.manifesto.numero_manifesto
+                    "id": int(manifesto.manifesto_id_tms) if manifesto.manifesto_id_tms else None
                 }
             }
         }
 
+        # Se houver dados de frete/cte, insere no payload
         if freight_data:
             payload["invoice_occurrence"]["freight"] = freight_data
 
@@ -463,19 +480,24 @@ def enviar_baixa_esl_task(self, baixa_id):
             "Authorization": f"Bearer {TOKEN}"
         }
 
+        # Log para debug interno antes de enviar (opcional)
+        print(f"Enviando baixa da NF {nf.chave_acesso} para o Manifesto TMS ID: {tms_manifest_id}")
+
         response = requests.post(
             URL_ESL,
             json=payload,
             headers=headers,
             timeout=30
         )
+        
+        # Se retornar 422 ou 400, o raise_for_status vai para o except HTTPError
         response.raise_for_status()
 
         # ✅ SUCESSO
         baixa.processado_tms = True
         baixa.integrado_tms = True
         baixa.data_integracao = timezone.now()
-        baixa.log_erro_tms = "Sucesso: Integrado com ESL"
+        baixa.log_erro_tms = "Sucesso: Integrado com ESL vinculando ao Manifesto"
         baixa.save()
 
     except BaixaNF.DoesNotExist:
@@ -483,20 +505,75 @@ def enviar_baixa_esl_task(self, baixa_id):
 
     except requests.exceptions.HTTPError as exc:
         status = exc.response.status_code if exc.response else None
-        msg_erro = f"Erro {status}: {exc.response.text if exc.response else str(exc)}"
+        detalhe_erro = exc.response.text if exc.response else str(exc)
+        msg_erro = f"Erro {status}: {detalhe_erro}"
 
         baixa.log_erro_tms = msg_erro[:500]
         baixa.integrado_tms = False
         baixa.save()
 
-        # ❌ NÃO RETRYA erro de validação (4xx)
+        # Se for erro de validação (como ID de manifesto inexistente ou chave inválida)
         if status and 400 <= status < 500:
             enviar_email_erro_tms_task.delay(baixa_id, msg_erro)
-            raise
+            return f"Erro de validação ESL: {msg_erro}"
 
-        # 🔁 Retry apenas para 5xx
+        # Retry para erros de servidor (5xx)
         if self.request.retries < self.max_retries:
             raise self.retry(exc=exc, countdown=60)
 
-        enviar_email_erro_tms_task.delay(baixa_id, msg_erro)
-        return f"Falha definitiva ESL (422): {msg_erro}"
+        return f"Falha definitiva ESL: {msg_erro}"
+
+    except Exception as e:
+        msg = f"Erro inesperado: {str(e)}"
+        baixa.log_erro_tms = msg[:500]
+        baixa.save()
+        raise self.retry(exc=e, countdown=60)
+
+
+
+@shared_task(bind=True, max_retries=5)
+def finalizar_manifesto_tms_task(self, manifesto_id):
+    from manifesto.models import Manifesto
+    import requests
+    from django.utils import timezone
+
+    try:
+        manifesto = Manifesto.objects.get(id=manifesto_id)
+        
+        if not manifesto.manifesto_id_tms:
+            return f"Erro: Manifesto {manifesto.numero_manifesto} sem ID interno do TMS."
+
+        url_graphql = "https://quickdelivery.eslcloud.com.br/graphql"
+        token = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
+
+        mutation = """
+        mutation manifestClose($id: ID, $sequenceCode: String, $params: ManifestCloseInput!) {
+          manifestClose(id: $id, sequenceCode: $sequenceCode, params: $params) {
+            success
+            errors
+            resource { id closedAt closingKm }
+          }
+        }
+        """
+
+        variables = {
+            "id": manifesto.manifesto_id_tms,
+            "params": {
+                "closedAt": manifesto.data_finalizacao.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+                "closingKm": float(manifesto.km_final)
+            }
+        }
+
+        headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {token}'}
+        response = requests.post(url_graphql, json={"query": mutation, "variables": variables}, timeout=30)
+        res_data = response.json()
+
+        if res_data.get('data', {}).get('manifestClose', {}).get('success'):
+            return f"Manifesto {manifesto.numero_manifesto} fechado com sucesso no TMS."
+        else:
+            erro = res_data.get('data', {}).get('manifestClose', {}).get('errors')
+            raise Exception(f"TMS recusou: {erro}")
+
+    except Exception as exc:
+        # Se for erro de rede ou o TMS estiver fora, tenta de novo em 5 min
+        raise self.retry(exc=exc, countdown=300)

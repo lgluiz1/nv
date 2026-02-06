@@ -11,7 +11,7 @@ from django.utils.html import format_html
 class WebhookEventoManifestoESL(models.Model):
     origem = models.CharField(max_length=50, default="ESL")
     tipo = models.CharField(max_length=50)
-    numero_manifesto = models.CharField(max_length=50 , null=True, blank=True)
+    numero_manifesto = models.CharField(max_length=50, null=True, blank=True)
     payload = models.JSONField()
     status = models.CharField(
         max_length=20,
@@ -88,6 +88,7 @@ class Manifesto(models.Model):
         unique=True,
         verbose_name="Número do Manifesto"
     )
+    manifesto_id_tms = models.CharField(max_length=50, null=True, blank=True)
 
     motorista = models.ForeignKey(
         Motorista,
@@ -112,6 +113,10 @@ class Manifesto(models.Model):
         choices=STATUS_CHOICES,
         default='EM_TRANSPORTE'
     )
+    qtd_transferencia = models.IntegerField(default=0, verbose_name="Qtd Transferência",null=True, blank=True)
+    qtd_despacho = models.IntegerField(default=0, verbose_name="Qtd Despacho", null=True, blank=True)
+    qtd_entrega = models.IntegerField(default=0, verbose_name="Qtd Entrega", null=True, blank=True)
+    qtd_retirada = models.IntegerField(default=0, verbose_name="Qtd Retirada", null=True, blank=True)
 
     km_inicial = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     km_final = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -137,6 +142,13 @@ class Manifesto(models.Model):
 
 # 3. Notas Fiscais (Itens do Manifesto)
 class NotaFiscal(models.Model):
+    TIPO_OPERACAO_CHOICES = [
+        ('TRANSFERENCIA', 'Transferência'),
+        ('DESPACHO', 'Despacho'),
+        ('ENTREGA', 'Entrega'),
+        ('RETIRADA', 'Retirada'),
+        ('OUTROS', 'Outros'),
+    ]
     """
     Representa uma NF-e dentro de um manifesto. A NF-e pode se repetir em outros manifestos.
     """
@@ -148,7 +160,11 @@ class NotaFiscal(models.Model):
     
     destinatario = models.CharField(max_length=255, verbose_name="Destinatário")
     endereco_entrega = models.CharField(max_length=255, verbose_name="Endereço de Entrega")
-    
+    tipo_operacao = models.CharField(
+        max_length=20, 
+        choices=TIPO_OPERACAO_CHOICES, 
+        default='ENTREGA', null=True, blank=True
+    )
     STATUS_CHOICES = [
         ('PENDENTE', 'Pendente'),
         ('BAIXADA', 'Baixada/Entregue'),
