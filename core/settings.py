@@ -25,9 +25,11 @@ CSRF_TRUSTED_ORIGINS = [
 # Application definition
 
 INSTALLED_APPS = [
-    "unfold",  # 👈 Deve ser o primeiro da lista
-    "unfold.contrib.filters",  # Opcional: Filtros avançados
-    "unfold.contrib.forms",  
+    'daphne',                  # 1º: SEMPRE o Daphne (para habilitar ASGI)
+    'channels',                # 2º: Camada de comunicação
+    'unfold',                  # 3º: O Admin bonito (ele continua funcionando 100%)
+    'unfold.contrib.filters',
+    'unfold.contrib.forms',  
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -43,7 +45,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'django_celery_beat',
     'corsheaders',
-    'channels',
+    
     'pwa',
 
     
@@ -127,7 +129,8 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'st63136_entregas_quickdelivery',
+        'NAME': 'st63136_dev_app_transportadora',
+        #'NAME': 'st63136_entregas_quickdelivery',
         'USER': 'st63136_quickdelivery',
         'PASSWORD': 'Qu1ck.2026',
         'HOST': 'st63136.ispot.cc',  # 👈 DEVE SER O DOMÍNIO OU IP DA INTERSERVER

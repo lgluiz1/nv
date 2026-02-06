@@ -28,8 +28,7 @@ services:
       python manage.py collectstatic --noinput &&
       python manage.py makemigrations &&
       python manage.py migrate &&
-      gunicorn core.wsgi:application --bind 0.0.0.0:8089 --timeout 120 --workers 3
-      "
+      daphne -b 0.0.0.0 -p 8089 --application-close-timeout 60 core.asgi:application"
     volumes:
       - .:/transportadora_backend
       - media_data:/transportadora_backend/media

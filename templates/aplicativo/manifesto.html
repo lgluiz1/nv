@@ -265,28 +265,28 @@
                 <input type="hidden" id="hidden-chave-nf">
                 
                 <div class="mb-3">
-                    <label class="form-label fw-bold">Selecione a Ocorrência:</label>
-                    <select class="form-select" id="select-ocorrencia">
-                        <optgroup label="ENTREGA (Obrigatório Foto)">
-                            <option value="1">1 - Entrega Realizada Normalmente</option>
-                            <option value="2">2 - Entrega com restrição ou parcial</option>
-                        </optgroup>
-                        <optgroup label="NÃO ENTREGA (Foto Opcional)">
-                            <option value="44">44 - Tempo de espera excedido</option>
-                            <option value="21">21 - Estabelecimento Fechado</option>
-                            <option value="20">20 - Falta de tempo hábil</option>
-                            <option value="39">39 - Fora de agendamento</option>
-                            <option value="14">14 - Mercadoria sinistrada</option>
-                            <option value="31">31 - Produto fora da temperatura</option>
-                            <option value="125">125 - Cliente se recusou a receber</option>
-                            <option value="6">6 - Endereço não localizado</option>
-                            <option value="126">126 - Endereço localizado – cliente ausente</option>
-                            <option value="127">127 - Endereço localizado ou divergente</option>
-                            <option value="85">85 - Apreensão Fiscal</option>
-                            <option value="26">26 - Recusa por desconhecer o pedido</option>
-                        </optgroup>
-                    </select>
-                </div>
+    <label class="form-label fw-bold">Selecione a Ocorrência:</label>
+    <select class="form-select" id="select-ocorrencia">
+        
+        <optgroup label="ENTREGA (Obrigatório Foto)">
+            {% for oc in sucesso %}
+                <option value="{{ oc.codigo_tms }}">{{ oc.codigo_tms }} - {{ oc.descricao }}</option>
+            {% endfor %}
+        </optgroup>
+
+        <optgroup label="NÃO ENTREGA (Foto Opcional)">
+            {% for oc in problemas %}
+                <option value="{{ oc.codigo_tms }}">{{ oc.codigo_tms }} - {{ oc.descricao }}</option>
+            {% endfor %}
+        </optgroup>
+        <optgroup label="DESPACHO E REDESPACHO (Foto Opcional)">
+            {% for oc in cia %}
+                <option value="{{ oc.codigo_tms }}">{{ oc.codigo_tms }} - {{ oc.descricao }}</option>
+            {% endfor %}
+        </optgroup>
+        
+    </select>
+</div>
 
                 <div class="mb-3" id="campo-recebedor">
                     <label class="form-label fw-bold">Nome do Recebedor:</label>

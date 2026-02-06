@@ -12,26 +12,23 @@ from .serializers import (
     ManifestoBuscaSerializer, ManifestoSerializer, 
     BaixaNFCreateSerializer, OcorrenciaSerializer
 )
-from .tasks import buscar_manifesto_completo_task
+from .tasks import buscar_manifesto_completo_task , finalizar_manifesto_tms_task
 
 class ManifestoFinalizacaoView(APIView):
     def post(self, request):
         km_final = request.data.get('km_final')
-        # Recebe o número visual (ex: 56892) vindo do seu JS
         numero_mft = request.data.get('manifesto_id') 
 
         if not numero_mft:
             return Response({"mensagem": "Número do manifesto não fornecido."}, status=400)
 
         try:
-            # Buscamos o manifesto pelo número visual
             manifesto = Manifesto.objects.get(numero_manifesto=str(numero_mft))
             
             if manifesto.finalizado:
                 return Response({"mensagem": "Este manifesto já foi encerrado."}, status=400)
 
-            # --- TRAVA DE SEGURANÇA: CONFERÊNCIA DE NOTAS PENDENTES ---
-            # Verificamos se existe alguma nota deste manifesto que ainda não foi baixada
+            # Conferência de Notas Pendentes (Sua trava de segurança)
             notas_pendentes = NotaFiscal.objects.filter(
                 manifesto=manifesto, 
                 status='PENDENTE'
@@ -39,16 +36,19 @@ class ManifestoFinalizacaoView(APIView):
 
             if notas_pendentes > 0:
                 return Response({
-                    "mensagem": f"Não é possível finalizar. Existem {notas_pendentes} notas pendentes de baixa."
+                    "mensagem": f"Não é possível finalizar. Existem {notas_pendentes} notas pendentes."
                 }, status=400)
-            # ---------------------------------------------------------
 
-            # Se todas as notas foram baixadas (Sucesso ou Ocorrência), finaliza
+            # --- SUCESSO LOCAL ---
             manifesto.km_final = km_final
             manifesto.finalizado = True
             manifesto.status = "FINALIZADO"
             manifesto.data_finalizacao = timezone.now()
             manifesto.save()
+
+            # --- DISPARA INTEGRAÇÃO EM BACKGROUND ---
+            # O motorista já é liberado aqui, a task se vira com o TMS
+            finalizar_manifesto_tms_task.delay(manifesto.id)
 
             return Response({"mensagem": "Sucesso!"}, status=200)
 

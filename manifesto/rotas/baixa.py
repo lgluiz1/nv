@@ -93,7 +93,7 @@ class RegistrarBaixaView(APIView):
                 nf.save()
                 
                 # Descomente para integrar com ESL
-                enviar_baixa_esl_task.delay(baixa.id)
+                #enviar_baixa_esl_task.delay(baixa.id)
 
             return Response({'status': 'sucesso', 'mensagem': 'Baixa registrada com sucesso!'})
 
@@ -103,3 +103,108 @@ class RegistrarBaixaView(APIView):
         except Exception as e:
             print(f"ERRO NA BAIXA: {str(e)}") 
             return Response({'erro': str(e)}, status=400)
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from manifesto.models import NotaFiscal, BaixaNF, Ocorrencia
+from django.db import transaction
+from manifesto.tasks import enviar_baixa_esl_task
+import json
+
+class RegistrarBaixaOperacionalView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        data = request.data
+        
+        # LOG DE DEBUG: Essencial para ver no Docker o que o JS está mandando
+        print(f"--- INICIO BAIXA OPERACIONAL ---")
+        print(f"Dados recebidos: {data}")
+
+        tipo_acao = data.get('tipo_operacao')  # TRANSFERENCIA, DESPACHO, RETIRADA
+        numero_mft = data.get('manifesto_id')
+        chave_acesso = data.get('chave_acesso')
+        
+        # Tratamento para booleano (JS envia 'true'/'false' como string às vezes)
+        is_completo_raw = data.get('is_completo', True)
+        is_completo = str(is_completo_raw).lower() == 'true'
+
+        # 1. VALIDAÇÃO DE CAMPOS OBRIGATÓRIOS
+        if not tipo_acao or not numero_mft:
+            return Response({
+                'erro': 'Os campos tipo_operacao e manifesto_id são obrigatórios.'
+            }, status=400)
+
+        # 2. MAPEAMENTO DE CÓDIGOS TMS
+        MAPA_CODIGOS = {
+            'TRANSFERENCIA': '098',
+            'DESPACHO': '050' if is_completo else '055',
+            'RETIRADA': '051' if is_completo else '056',
+        }
+
+        codigo_tms = MAPA_CODIGOS.get(tipo_acao)
+        if not codigo_tms:
+            return Response({'erro': f'Operação {tipo_acao} inválida.'}, status=400)
+
+        try:
+            ocorrencia_obj = Ocorrencia.objects.get(codigo_tms=codigo_tms)
+        except Ocorrencia.DoesNotExist:
+            print(f"ERRO: Código TMS {codigo_tms} não encontrado no banco de dados.")
+            return Response({
+                'erro': f'Código TMS {codigo_tms} não cadastrado para {tipo_acao}.'
+            }, status=400)
+
+        # 3. FILTRAGEM DAS NOTAS ALVO
+        # Usamos numero_manifesto para a busca (fictício que o motorista usa)
+        try:
+            if tipo_acao == 'TRANSFERENCIA' and not chave_acesso:
+                notas_alvo = NotaFiscal.objects.filter(
+                    manifesto__numero_manifesto=str(numero_mft),
+                    tipo_operacao='TRANSFERENCIA'
+                ).exclude(status='BAIXADA')
+            else:
+                notas_alvo = NotaFiscal.objects.filter(
+                    chave_acesso=chave_acesso, 
+                    manifesto__numero_manifesto=str(numero_mft)
+                )
+
+            if not notas_alvo.exists():
+                return Response({
+                    'erro': f'Nenhuma nota pendente encontrada para o manifesto {numero_mft}.'
+                }, status=404)
+
+            contador = 0
+            with transaction.atomic():
+                for nf in notas_alvo:
+                    # Criamos a baixa (o manifesto_id_tms será pego pela TASK via model)
+                    baixa = BaixaNF.objects.create(
+                        nota_fiscal=nf,
+                        tipo='OCORRENCIA',
+                        ocorrencia=ocorrencia_obj,
+                        recebedor="FILIAL DESTINO" if tipo_acao == 'TRANSFERENCIA' else "CIA TRANSPORTADORA",
+                        processado_tms=False,
+                        integrado_tms=False
+                    )
+                    
+                    # Atualiza status da nota
+                    nf.status = 'BAIXADA'
+                    nf.save()
+
+                    # 4. FILA COM DELAY (Countdown para não sobrecarregar o TMS)
+                    # O segredo: contador * 2 segundos entre cada nota
+                    delay = contador * 2
+                    #enviar_baixa_esl_task.apply_async(args=[baixa.id], countdown=delay)
+                    
+                    contador += 1
+
+            print(f"SUCESSO: {contador} notas processadas.")
+            return Response({
+                'status': 'sucesso', 
+                'mensagem': f'{contador} notas enviadas para integração com TMS.'
+            })
+
+        except Exception as e:
+            print(f"ERRO CRÍTICO NA VIEW: {str(e)}")
+            return Response({'erro': f'Erro interno: {str(e)}'}, status=500)

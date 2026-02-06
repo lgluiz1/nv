@@ -7,12 +7,14 @@ from manifesto.rotas.init import AppInitView
 from manifesto.rotas.preview import StatusPreviewManifestoView
 from manifesto.rotas.listagem import ListarNotasManifestoView
 from manifesto.rotas.verificacao import VerificarManifestoAtivoView
-from manifesto.rotas.baixa import RegistrarBaixaView
+from manifesto.rotas.baixa import RegistrarBaixaView, RegistrarBaixaOperacionalView
 from manifesto.rotas.motorista_perfil import perfil_motorista
 from manifesto.views import ManifestoFinalizacaoView
 from manifesto.rotas.historicomanifestos import HistoricoManifestosView
 from manifesto.rotas.sincronizarmanifesto import SincronizarManifestoView
 from manifesto.rotas.webhook import webhook_tms_esl
+from manifesto.rotas.listagemocorrencias import ListarOcorrenciasView
+from manifesto.rotas.views_painel import painel_monitoramento
 
 urlpatterns = [
     path('manifesto/busca/', BuscarManifestoView.as_view()),
@@ -28,5 +30,8 @@ urlpatterns = [
     path('manifesto/finalizar/', ManifestoFinalizacaoView.as_view()),
     path('manifesto/sincronizar/', SincronizarManifestoView.as_view()),
     path('manifesto/webhook/tms-esl/', webhook_tms_esl, name='webhook_tms_esl'),
+    path('manifesto/ocorrencias/', ListarOcorrenciasView.as_view()),
+    path('manifesto/baixa-operacional/', RegistrarBaixaOperacionalView.as_view()),
+    path('painel/monitoramento/', painel_monitoramento, name='painel_monitoramento'),
 
 ]

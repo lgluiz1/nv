@@ -20,6 +20,8 @@ class ListarNotasManifestoView(APIView):
                 'destinatario': nf.destinatario,
                 'endereco_entrega': nf.endereco_entrega,
                 'status': nf.status,
+                # AQUI ESTÁ A CHAVE: Passando o tipo para o JS validar
+                'tipo_operacao': nf.tipo_operacao,
                 'ja_baixada': baixa is not None, 
                 'dados_baixa': {
                     'tipo': baixa.tipo,

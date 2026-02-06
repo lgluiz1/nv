@@ -17,7 +17,7 @@ const TEMA_OPERACAO = {
     'TRANSFERENCIA': { icon: 'bi-box-arrow-right', color: 'primary', label: 'Registrar Chegada', code: '98' },
     'DESPACHO':      { icon: 'bi-airplane', color: 'info', label: 'Confirmar Despacho', code: '50' },
     'RETIRADA':      { icon: 'bi-box-arrow-in-left', color: 'warning', label: 'Confirmar Retirada', code: '51' },
-    'ENTREGA':       { icon: 'bi-truck', color: 'primary', label: 'Dar Baixa', code: '1' }
+    'ENTREGA':       { icon: 'bi-truck', color: 'success', label: 'Dar Baixa', code: '1' }
 };
 
 // =====================================================
@@ -354,23 +354,16 @@ async function atualizarListaViva(numeroManifesto) {
                                     </div>
                                     <p class="small text-muted mb-1">👤 ${nf.destinatario}</p>
                                     <p class="small text-muted mb-2" style="font-size: 0.75rem;"><i class="bi bi-geo-alt"></i> ${nf.endereco_entrega}</p>
-                                    ${!baixada ? `
-    <button class="btn btn-sm btn-${config.color} w-100 fw-bold" 
-        onclick="${
-            tipo === 'ENTREGA' 
-            ? `abrirModalBaixa('${nf.numero_nota}', '${nf.chave_acesso}', '${tipo}')` 
-            : tipo === 'TRANSFERENCIA'
-            ? `confirmarTransferenciaIndividual('${nf.numero_nota}', '${nf.chave_acesso}')`
-            : `abrirModalPerguntaOperacional('${nf.numero_nota}', '${nf.chave_acesso}', '${tipo}')`
-        }">
-        ${config.label}
-    </button>
-` : `
-    <button class="btn btn-sm btn-outline-success w-100" 
-        onclick='abrirModalDetalhes(${JSON.stringify(nf.dados_baixa)})'>
-        Ver Detalhes
-    </button>
-`}
+                                    ${!baixada ?
+                                        `<button class="btn btn-sm btn-${config.color} w-100 fw-bold" 
+                                                 onclick="abrirModalBaixa('${nf.numero_nota}', '${nf.chave_acesso}', '${tipo}')">
+                                            ${config.label}
+                                         </button>` :
+                                        `<button class="btn btn-sm btn-outline-success w-100" 
+                                                 onclick='abrirModalDetalhes(${JSON.stringify(nf.dados_baixa)})'>
+                                            Ver Detalhes
+                                         </button>`
+                                    }
                                 </div>
                             </div>`;
                     });
@@ -959,173 +952,24 @@ function limparBusca() {
 
 // Função para registrar a chegada de todas as transferências de uma vez
 async function registrarChegadaColetiva(manifestoId) {
-    // 1. Criamos o modal de confirmação dinâmico (Para evitar o 'confirm' do navegador)
-    const modalConfirmHTML = `
-    <div class="modal fade" id="modalConfirmMassa" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content border-0 shadow-lg" style="border-radius: 20px;">
-                <div class="modal-body text-center p-4">
-                    <div class="mb-3">
-                        <i class="bi bi-exclamation-circle-fill text-primary" style="font-size: 3.5rem;"></i>
-                    </div>
-                    <h5 class="fw-bold">Chegada na Filial</h5>
-                    <p class="text-muted">Deseja registrar a chegada de <b>TODAS</b> as notas de transferência deste manifesto?</p>
-                    
-                    <div class="d-grid gap-2 mt-4">
-                        <button class="btn btn-primary btn-lg fw-bold" id="btn-confirmar-massa">
-                            SIM, REGISTRAR TUDO
-                        </button>
-                        <button class="btn btn-light" data-bs-dismiss="modal">CANCELAR</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>`;
-
-    document.body.insertAdjacentHTML('beforeend', modalConfirmHTML);
-    const mConfirm = new bootstrap.Modal(document.getElementById('modalConfirmMassa'));
-    mConfirm.show();
-
-    // 2. Ação ao clicar em confirmar no modal
-    document.getElementById('btn-confirmar-massa').onclick = async () => {
-        mConfirm.hide(); // Fecha o modal de pergunta
-        
-        // Abre o modal de status (Carregando)
-        statusModal.show();
-        atualizarStatusUI('loading', 'Processando Lote...', 'Enfileirando notas para integração com ESL.');
-
-        try {
-            const response = await authFetch(`${API_BASE}manifesto/baixa-operacional/`, {
-                method: 'POST',
-                body: JSON.stringify({
-                    tipo_operacao: 'TRANSFERENCIA',
-                    manifesto_id: manifestoId, // 👈 Corrigido para usar o parâmetro da função
-                    chave_acesso: null,        // Indica ao backend que é o lote todo
-                    is_completo: true
-                })
-            });
-
-            if (response.ok) {
-                atualizarStatusUI('success', '✅ Registro Concluído', 'A fila de chegada foi processada com sucesso.');
-                // Recarrega após 2 segundos para atualizar a lista no PWA
-                setTimeout(() => location.reload(), 2000);
-            } else {
-                const erroData = await response.json();
-                atualizarStatusUI('error', '❌ Falha na Operação', erroData.erro || 'Erro ao processar lote.');
-            }
-        } catch (e) {
-            atualizarStatusUI('error', '📡 Erro de Rede', 'Verifique sua conexão com a internet.');
-        }
-    };
-
-    // Remove o HTML do modal do site ao fechar para não dar conflito depois
-    document.getElementById('modalConfirmMassa').addEventListener('hidden.bs.modal', function() {
-        this.remove();
-    });
-}
-
-// Função para abrir o modal de pergunta operacional (Despacho ou Retirada)
-
-function abrirModalPerguntaOperacional(numeroNota, chave, tipo) {
-    const titulo = tipo === 'DESPACHO' ? "Confirmar Despacho" : "Confirmar Retirada";
-    const pergunta = tipo === 'DESPACHO' ? "O embarque foi completo?" : "A retirada foi completa?";
+    if (!confirm("Confirmar a CHEGADA de todas as notas de transferência na filial?")) return;
     
-    // Injeta o HTML do modal dinamicamente no body
-    const modalHtml = `
-    <div class="modal fade" id="modalOperacional" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content shadow-lg border-0" style="border-radius: 20px;">
-                <div class="modal-body text-center p-4">
-                    <div class="mb-3">
-                        <i class="bi bi-question-circle-fill text-warning" style="font-size: 3.5rem;"></i>
-                    </div>
-                    <h5 class="fw-bold">${titulo}</h5>
-                    <p class="text-muted">NF: ${numeroNota}</p>
-                    <p class="mb-4">${pergunta}</p>
-                    
-                    <div class="d-grid gap-2">
-                        <button class="btn btn-success btn-lg fw-bold" onclick="executarBaixaOp('${chave}', '${tipo}', true)">
-                            SIM (Completo)
-                        </button>
-                        <button class="btn btn-outline-danger" onclick="executarBaixaOp('${chave}', '${tipo}', false)">
-                            NÃO (Parcial)
-                        </button>
-                        <button class="btn btn-link text-muted" data-bs-dismiss="modal">Cancelar</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>`;
-
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    const m = new bootstrap.Modal(document.getElementById('modalOperacional'));
-    m.show();
-
-    // Limpa o HTML do modal ao fechar para não poluir o DOM
-    document.getElementById('modalOperacional').addEventListener('hidden.bs.modal', function() {
-        this.remove();
-    });
-}
-
-async function executarBaixaOp(chave, tipo, isCompleto) {
-    const modalEl = document.getElementById('modalOperacional');
-    bootstrap.Modal.getInstance(modalEl).hide();
-
-    atualizarStatusUI('loading', 'Processando...', 'Sincronizando com a fila do sistema.');
     statusModal.show();
+    atualizarStatusUI('loading', 'Processando Chegada...', 'Registrando entrada das notas no armazém.');
 
     try {
-        const response = await authFetch(`${API_BASE}manifesto/baixa-operacional/`, {
+        const response = await authFetch(`${API_BASE}manifesto/baixa-coletiva/`, {
             method: 'POST',
-            body: JSON.stringify({
-                tipo_operacao: tipo,
-                chave_acesso: chave,
-                manifesto_id: manifestoAtual,
-                is_completo: isCompleto
-            })
+            body: JSON.stringify({ manifesto_id: manifestoId, tipo: 'TRANSFERENCIA' })
         });
 
         if (response.ok) {
-            atualizarStatusUI('success', '✅ Sucesso!', 'Ocorrência enviada para processamento.');
+            atualizarStatusUI('success', '✅ Chegada Registrada', 'Todas as notas de transferência foram baixadas.');
             setTimeout(() => location.reload(), 2000);
         } else {
-            atualizarStatusUI('error', '❌ Falha', 'Erro ao registrar ocorrência.');
+            atualizarStatusUI('error', '❌ Erro na Baixa', 'Não foi possível processar a baixa coletiva.');
         }
-    } catch (err) {
-        atualizarStatusUI('error', '📡 Erro de Conexão', 'Verifique sua internet.');
-    }
-}
-
-// Função para transferência unitária (Nota por Nota)
-async function confirmarTransferenciaIndividual(numeroNota, chave) {
-    const confirmar = await new Promise(resolve => {
-        // Usando um modal de confirmação limpo em vez de alert
-        const modalConfirmHTML = `
-        <div class="modal fade" id="modalConfirmTransf" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content border-0 shadow" style="border-radius: 15px;">
-                    <div class="modal-body text-center p-4">
-                        <i class="bi bi-info-circle text-primary" style="font-size: 3rem;"></i>
-                        <h5 class="fw-bold mt-3">Registrar Chegada</h5>
-                        <p class="text-muted">Deseja confirmar a chegada da NF ${numeroNota} na filial?</p>
-                        <div class="d-grid gap-2 mt-4">
-                            <button class="btn btn-primary fw-bold" id="btn-ok-transf">CONFIRMAR</button>
-                            <button class="btn btn-light" data-bs-dismiss="modal">CANCELAR</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-        document.body.insertAdjacentHTML('beforeend', modalConfirmHTML);
-        const m = new bootstrap.Modal(document.getElementById('modalConfirmTransf'));
-        m.show();
-        
-        document.getElementById('btn-ok-transf').onclick = () => { m.hide(); resolve(true); };
-        document.getElementById('modalConfirmTransf').addEventListener('hidden.bs.modal', function(){ this.remove(); resolve(false); });
-    });
-
-    if (confirmar) {
-        // Chama a mesma lógica de execução enviando is_completo=true (pois 098 é fixo)
-        executarBaixaOp(chave, 'TRANSFERENCIA', true);
+    } catch (e) {
+        atualizarStatusUI('error', '📡 Erro de Rede', 'Verifique sua conexão.');
     }
 }

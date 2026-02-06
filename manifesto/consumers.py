@@ -1,23 +1,25 @@
-from channels.generic.websocket import AsyncJsonWebsocketConsumer
+import json
+from channels.generic.websocket import AsyncWebsocketConsumer
 
-class ManifestoConsumer(AsyncJsonWebsocketConsumer):
-
+class MonitoramentoConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        self.motorista_id = self.scope['url_route']['kwargs']['motorista_id']
-        self.group_name = f"manifesto_{self.motorista_id}"
+        self.group_name = "painel_monitoramento"
 
+        # Entra no grupo do painel
         await self.channel_layer.group_add(
             self.group_name,
             self.channel_name
         )
-
         await self.accept()
 
     async def disconnect(self, close_code):
+        # Sai do grupo ao fechar a página
         await self.channel_layer.group_discard(
             self.group_name,
             self.channel_name
         )
 
-    async def manifesto_update(self, event):
-        await self.send_json(event["data"])
+    # Este método recebe a mensagem do Signal (Python) e envia para o JS (Navegador)
+    async def atualizar_painel(self, event):
+        data = event["data"]
+        await self.send(text_data=json.dumps(data))

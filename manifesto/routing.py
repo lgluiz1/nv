@@ -1,6 +1,7 @@
 from django.urls import re_path
-from .consumers import ManifestoConsumer
+from . import consumers
 
 websocket_urlpatterns = [
-    re_path(r'ws/manifesto/(?P<motorista_id>\d+)/$', ManifestoConsumer.as_asgi()),
+    # O correto para Channels é .as_asgi()
+    re_path(r'ws/painel-logistico/$', consumers.MonitoramentoConsumer.as_asgi()),
 ]
