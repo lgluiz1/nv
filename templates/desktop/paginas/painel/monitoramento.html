@@ -85,7 +85,9 @@
 </style>
 <script>
     // Adicione isso ao final do seu template ou num arquivo .js separado
-const socket = new WebSocket('ws://' + window.location.host + '/ws/painel-logistico/');
+// Substitua sua linha atual por estas:
+const ws_scheme = window.location.protocol === "https:" ? "wss" : "ws";
+const socket = new WebSocket(ws_scheme + '://' + window.location.host + '/ws/painel-logistico/');
 
 socket.onmessage = function(e) {
     const data = JSON.parse(e.data);
