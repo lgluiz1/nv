@@ -120,6 +120,13 @@ socket.onclose = function() {
     status.classList.replace('bg-success', 'bg-danger');
     status.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i>DESCONECTADO';
 };
+    socket.onclose = function() {
+    // ... seu código de mudar a cor do status ...
+    console.log('Socket fechado. Tentando reconectar em 5 segundos...');
+    setTimeout(function() {
+        window.location.reload(); // Maneira simples de reconectar
+    }, 5000);
+};
 </script>
 {% endblock %}
 
