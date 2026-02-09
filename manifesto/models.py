@@ -153,6 +153,7 @@ class NotaFiscal(models.Model):
     Representa uma NF-e dentro de um manifesto. A NF-e pode se repetir em outros manifestos.
     """
     manifesto = models.ForeignKey(Manifesto, on_delete=models.CASCADE, related_name='notas_fiscais')
+    freight_id_tms = models.CharField(max_length=50, null=True, blank=True)
     
     # Chave de acesso e Número não são únicos globalmente, mas são únicos DENTRO DESTE MANIFESTO
     chave_acesso = models.CharField(max_length=44, null=True, blank=True, verbose_name="Chave de Acesso") 

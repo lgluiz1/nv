@@ -21,5 +21,10 @@ class MonitoramentoConsumer(AsyncWebsocketConsumer):
 
     # Este método recebe a mensagem do Signal (Python) e envia para o JS (Navegador)
     async def atualizar_painel(self, event):
-        data = event["data"]
-        await self.send(text_data=json.dumps(data))
+        # Pegamos o que veio do Signal
+        conteudo = event["data"]
+        
+        # Enviamos para o JS dentro de uma chave chamada 'dados'
+        await self.send(text_data=json.dumps({
+            "dados": conteudo
+        }))

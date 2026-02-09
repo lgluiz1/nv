@@ -283,21 +283,13 @@ async function atualizarListaViva(numeroManifesto) {
                     </div>
                     <div id="container-baixa-coletiva"></div>
                     <div id="lista-notas-container"></div>
-                    <div id="lista-notas-concluidas" class="mt-4 pt-3 border-top d-none">
-                        <div class="d-flex align-items-center mb-3 text-success opacity-75">
-                            <i class="bi bi-check-all fs-4 me-2"></i>
-                            <h6 class="mb-0 fw-bold text-uppercase">Itens Concluídos</h6>
-                        </div>
-                        <div id="container-concluidos-cards" class="opacity-50"></div>
-                    </div>
                 `;
             }
 
             const containerNotas = document.getElementById('lista-notas-container');
-            const containerConcluidos = document.getElementById('container-concluidos-cards');
-            const secaoConcluidos = document.getElementById('lista-notas-concluidas');
             const containerColetiva = document.getElementById('container-baixa-coletiva');
             
+            // 2. LOGICA DE AGRUPAMENTO E TEMAS
             const TEMA_OPERACAO = {
                 'TRANSFERENCIA': { icon: 'bi-box-arrow-right', color: 'primary', label: 'Registrar Chegada', code: '98' },
                 'DESPACHO':      { icon: 'bi-airplane', color: 'info', label: 'Confirmar Despacho', code: '50' },
@@ -306,60 +298,109 @@ async function atualizarListaViva(numeroManifesto) {
             };
 
             const grupos = { 'TRANSFERENCIA': [], 'DESPACHO': [], 'RETIRADA': [], 'ENTREGA': [] };
-            let htmlConcluidos = '';
             let totalFinalizadas = 0;
 
-            // 2. SEPARAÇÃO DAS NOTAS (Pendentes por Grupo vs Concluídas Única)
             notas.forEach(nf => {
+                if (nf.ja_baixada) totalFinalizadas++;
                 const tipo = nf.tipo_operacao || 'ENTREGA';
-                const baixada = nf.ja_baixada;
-                const config = TEMA_OPERACAO[tipo] || TEMA_OPERACAO['ENTREGA'];
-
-                if (baixada) {
-                    totalFinalizadas++;
-                    // Gera o card para a seção de concluídos (sem botão de ação)
-                    htmlConcluidos += gerarCardHTML(nf, config, true);
-                } else {
-                    // Adiciona ao grupo para as seções de trabalho
-                    if (grupos[tipo]) grupos[tipo].push(nf);
-                    else grupos['ENTREGA'].push(nf);
-                }
+                if (grupos[tipo]) grupos[tipo].push(nf);
+                else grupos['ENTREGA'].push(nf);
             });
 
-            // 3. RENDERIZAÇÃO DAS NOTAS PENDENTES (AGRUPADAS)
-            let htmlPendentes = '';
+            // 3. RENDERIZAÇÃO DO CARD DE BAIXA COLETIVA (Apenas para Transferência)
+            const transfPendentes = grupos['TRANSFERENCIA'].filter(n => !n.ja_baixada);
+            if (transfPendentes.length > 0 && containerColetiva) {
+                containerColetiva.innerHTML = `
+                    <div class="card bg-primary text-white mb-4 shadow-sm border-0 animate__animated animate__pulse">
+                        <div class="card-body d-flex justify-content-between align-items-center">
+                            <div>
+                                <small class="fw-bold opacity-75">OPERAÇÃO FILIAL</small>
+                                <h6 class="mb-0">Chegada de ${transfPendentes.length} Notas</h6>
+                            </div>
+                            <button class="btn btn-light btn-sm fw-bold text-primary px-3" 
+                                    onclick="registrarChegadaColetiva('${numeroManifesto}')">
+                                BAIXAR TUDO
+                            </button>
+                        </div>
+                    </div>`;
+            } else if (containerColetiva) {
+                containerColetiva.innerHTML = '';
+            }
+
+            // 4. RENDERIZAÇÃO DAS NOTAS AGRUPADAS
+            let htmlNotas = '';
             Object.keys(grupos).forEach(tipo => {
                 if (grupos[tipo].length > 0) {
                     const config = TEMA_OPERACAO[tipo];
-                    htmlPendentes += `<div class="group-divider mb-2 mt-3 small fw-bold text-muted text-uppercase" style="background: #e9ecef; padding: 5px 10px; border-radius: 5px;">
-                                        <i class="bi ${config.icon} me-1"></i> ${tipo} (${grupos[tipo].length})
-                                      </div>`;
+                    
+                    // Divisor de Grupo
+                    htmlNotas += `<div class="group-divider mb-2 mt-3 small fw-bold text-muted text-uppercase" style="background: #e9ecef; padding: 5px 10px; border-radius: 5px;">
+                                    <i class="bi ${config.icon} me-1"></i> ${tipo} (${grupos[tipo].length})
+                                  </div>`;
 
                     grupos[tipo].forEach(nf => {
-                        htmlPendentes += gerarCardHTML(nf, config, false);
+                        const baixada = nf.ja_baixada;
+                        const cor = baixada ? 'success' : config.color;
+                        const icone = baixada ? 'bi-check-circle-fill' : config.icon;
+
+                        htmlNotas += `
+                            <div class="card mb-3 shadow-sm border-start border-${cor} border-4 animate__animated animate__fadeInUp" data-chave="${nf.chave_acesso}">
+                                <div class="card-body p-3">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <h6 class="fw-bold mb-1">📝NF ${nf.numero_nota}</h6>
+                                        <span>
+                                            <i class="bi ${icone} text-${cor}" style="font-size: 1.2rem;"></i>
+                                        </span>
+                                    </div>
+                                    <p class="small text-muted mb-1">👤 ${nf.destinatario}</p>
+                                    <p class="small text-muted mb-2" style="font-size: 0.75rem;"><i class="bi bi-geo-alt"></i> ${nf.endereco_entrega}</p>
+                                    ${!baixada ? `
+    <button class="btn btn-sm btn-${config.color} w-100 fw-bold" 
+        onclick="${
+            tipo === 'ENTREGA' 
+            ? `abrirModalBaixa('${nf.numero_nota}', '${nf.chave_acesso || ''}', '${tipo}')` 
+            : tipo === 'TRANSFERENCIA'
+            ? `confirmarTransferenciaIndividual('${nf.numero_nota}', '${nf.chave_acesso || ''}')`
+            : `abrirModalPerguntaOperacional('${nf.numero_nota}', '${nf.chave_acesso || ''}', '${tipo}')`
+        }">
+        ${config.label}
+    </button>
+` : `
+    <button class="btn btn-sm btn-outline-success w-100" 
+        onclick='abrirModalDetalhes(${JSON.stringify(nf.dados_baixa)})'>
+        Ver Detalhes
+    </button>
+`}
+                                </div>
+                            </div>`;
                     });
                 }
             });
 
-            containerNotas.innerHTML = htmlPendentes;
+            containerNotas.innerHTML = htmlNotas;
 
-            // 4. EXIBIÇÃO DOS CONCLUÍDOS
-            if (totalFinalizadas > 0) {
-                containerConcluidos.innerHTML = htmlConcluidos;
-                secaoConcluidos.classList.remove('d-none');
-            } else {
-                secaoConcluidos.classList.add('d-none');
+            // 5. RECUPERAÇÃO DO BOTÃO DE REFRESH (FAB) - MANTIDO ORIGINAL
+            let btnRefresh = document.getElementById('btn-refresh-container');
+            if (!btnRefresh) {
+                btnRefresh = document.createElement('div');
+                btnRefresh.id = 'btn-refresh-container';
+                btnRefresh.innerHTML = `
+                    <button onclick="iniciarSincronismo('${numeroManifesto}')" 
+                            class="btn btn-primary shadow-lg animate__animated animate__bounceIn" 
+                            style="position: fixed; bottom: 80px; right: 20px; width: 60px; height: 60px; border-radius: 50%; z-index: 1050; display: flex; align-items: center; justify-content: center;">
+                        <i class="bi bi-arrow-clockwise fs-3"></i>
+                    </button>
+                `;
+                document.body.appendChild(btnRefresh);
             }
 
-            // --- RESTANTE DA LÓGICA ORIGINAL (BAIXA COLETIVA, CONTADORES, REFRESH, KM FINAL) ---
-            const transfPendentes = grupos['TRANSFERENCIA'].filter(n => !n.ja_baixada);
-            if (transfPendentes.length > 0 && containerColetiva) {
-                containerColetiva.innerHTML = `<div class="card bg-primary text-white mb-4 shadow-sm border-0 animate__animated animate__pulse"><div class="card-body d-flex justify-content-between align-items-center"><div><small class="fw-bold opacity-75">OPERAÇÃO FILIAL</small><h6 class="mb-0">Chegada de ${transfPendentes.length} Notas</h6></div><button class="btn btn-light btn-sm fw-bold text-primary px-3" onclick="registrarChegadaColetiva('${numeroManifesto}')">BAIXAR TUDO</button></div></div>`;
-            } else if (containerColetiva) { containerColetiva.innerHTML = ''; }
-
+            // 6. RECUPERAÇÃO DOS CONTADORES - MANTIDO ORIGINAL
             if (contador) {
                 let htmlContadores = `<div class="d-flex gap-2"><span class="badge bg-secondary p-2">${notas.length} Notas no Manifesto</span>`;
-                if (totalFinalizadas > 0) htmlContadores += `<span class="badge bg-success p-2 animate__animated animate__bounceIn"><i class="bi bi-check2-circle"></i> ${totalFinalizadas} Finalizadas</span>`;
+                if (totalFinalizadas > 0) {
+                    htmlContadores += `<span class="badge bg-success p-2 animate__animated animate__bounceIn"><i class="bi bi-check2-circle"></i> ${totalFinalizadas} Finalizadas</span>`;
+                }
+                // DISPARO AUTOMÁTICO DO KM FINAL
                 if (notas.length > 0 && totalFinalizadas === notas.length) {
                     const modalKM = new bootstrap.Modal(document.getElementById('kmFinalModal'));
                     setTimeout(() => { modalKM.show(); }, 800);
@@ -370,45 +411,9 @@ async function atualizarListaViva(numeroManifesto) {
 
             filtrarNotasOffline();
         }
-    } catch (err) { console.error("Erro na atualização viva:", err); }
-}
-
-// FUNÇÃO AUXILIAR PARA GERAR O CARD (EVITA DUPLICAR CÓDIGO)
-function gerarCardHTML(nf, config, baixada) {
-    const cor = baixada ? 'success' : config.color;
-    const icone = baixada ? 'bi-check-circle-fill' : config.icon;
-    const chave = nf.chave_acesso || '';
-    const numero = nf.numero_nota || '';
-    const tipo = nf.tipo_operacao || 'ENTREGA';
-
-    return `
-        <div class="card mb-3 shadow-sm border-start border-${cor} border-4 animate__animated ${baixada ? '' : 'animate__fadeInUp'}" data-chave="${chave}">
-            <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-start">
-                    <h6 class="fw-bold mb-1">📝NF ${numero}</h6>
-                    <span><i class="bi ${icone} text-${cor}" style="font-size: 1.2rem;"></i></span>
-                </div>
-                <p class="small text-muted mb-1">👤 ${nf.destinatario}</p>
-                <p class="small text-muted mb-2" style="font-size: 0.75rem;"><i class="bi bi-geo-alt"></i> ${nf.endereco_entrega}</p>
-                ${!baixada ? `
-                    <button class="btn btn-sm btn-${config.color} w-100 fw-bold" 
-                        onclick="${
-                            tipo === 'ENTREGA' 
-                            ? `abrirModalBaixa('${numero}', '${chave}', '${tipo}')` 
-                            : tipo === 'TRANSFERENCIA'
-                            ? `confirmarTransferenciaIndividual('${numero}', '${chave}')`
-                            : `abrirModalPerguntaOperacional('${numero}', '${chave}', '${tipo}')`
-                        }">
-                        ${config.label}
-                    </button>
-                ` : `
-                    <button class="btn btn-sm btn-outline-success w-100" 
-                        onclick='abrirModalDetalhes(${JSON.stringify(nf.dados_baixa)})'>
-                        Ver Detalhes
-                    </button>
-                `}
-            </div>
-        </div>`;
+    } catch (err) { 
+        console.error("Erro na atualização viva:", err); 
+    }
 }
 // =====================================================
 // FUNÇÕES DE INTERFACE (MODALS E SEARCH)

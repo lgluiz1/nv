@@ -222,6 +222,9 @@ def buscar_manifesto_completo_task(self, log_id):
     import requests
     import json
     import time
+    import logging
+
+    logger = logging.getLogger(__name__)
 
     try:
         log = ManifestoBuscaLog.objects.select_related('motorista').get(id=log_id)
@@ -230,7 +233,7 @@ def buscar_manifesto_completo_task(self, log_id):
         token_geral = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
         headers_geral = {"Content-Type": "application/json", "Authorization": f"Bearer {token_geral}"}
 
-        # --- ETAPA 1: VALIDAR MOTORISTA E PEGAR ID INTERNO + CONTADORES ---
+        # --- ETAPA 1: VALIDAR MOTORISTA E PEGAR ID INTERNO ---
         url_valida = "https://quickdelivery.eslcloud.com.br/api/analytics/reports/2972/data"
         payload_busca = {
             "search": {
@@ -261,14 +264,14 @@ def buscar_manifesto_completo_task(self, log_id):
         nome_filial_tms = info_tms.get('mft_crn_psn_nickname', 'MATRIZ').strip().upper()
         filial_obj, _ = Filial.objects.get_or_create(nome=nome_filial_tms)
 
-        # Criar/Recuperar Manifesto Local (SALVANDO NOVOS CAMPOS DE CONTAGEM)
+        # Criar/Recuperar Manifesto Local
         manifesto_obj, _ = Manifesto.objects.update_or_create(
             numero_manifesto=numero_visual,
             defaults={
                 'motorista': motorista, 
                 'filial': filial_obj,
                 'status': 'EM_TRANSPORTE',
-                'manifesto_id_tms': info_tms.get('id'), # Salvando ID interno
+                'manifesto_id_tms': info_tms.get('id'), 
                 'qtd_transferencia': int(info_tms.get('transfer_manifest_items_count', 0)),
                 'qtd_entrega': int(info_tms.get('dispatch_draft_manifest_items_count', 0)),
                 'qtd_retirada': int(info_tms.get('pick_manifest_items_count', 0)),
@@ -279,13 +282,13 @@ def buscar_manifesto_completo_task(self, log_id):
         log.status = 'ENRIQUECENDO'
         log.save()
 
-        # --- ETAPA 2: CAPTURAR LISTA DE NOTAS E CLASSIFICAR TIPO ---
+        # --- ETAPA 2: CAPTURAR LISTA E CLASSIFICAR TIPO (COM SUPORTE A FREIGHT_ID) ---
         token_notas = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
         url_notas = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
         
         params_notas = {"manifest_id": str(id_interno_esl), "per": 20}
         start_cursor = None
-        notas_unicas_dict = {} # Chave -> {numero, tipo}
+        notas_unicas_dict = {} 
         
         GATILHOS = {'122': 'TRANSFERENCIA', '119': 'DESPACHO', '120': 'ENTREGA', '121': 'RETIRADA'}
 
@@ -297,56 +300,59 @@ def buscar_manifesto_completo_task(self, log_id):
             data_n = res_n.json()
             registros = data_n.get("data", [])
             for item in registros:
-                chave = item.get("invoice", {}).get("key")
+                invoice_data = item.get("invoice", {})
+                chave = invoice_data.get("key")
+                numero_doc = invoice_data.get("number")
+                freight_id = item.get("freight", {}).get("id") if item.get("freight") else None
                 codigo_oc = str(item.get("occurrence", {}).get("code"))
-                id_manifesto_tms = item.get("manifest", {}).get("id") if item.get("manifest") else None
                 
-                if id_manifesto_tms and not manifesto_obj.manifesto_id_tms:
-                    # Se achamos o ID e ele ainda não está no nosso banco, salvamos agora!
-                    manifesto_obj.manifesto_id_tms = str(id_manifesto_tms)
-                    manifesto_obj.save(update_fields=['manifesto_id_tms'])
-                    print(f">>> ID Interno TMS {id_manifesto_tms} vinculado ao manifesto {numero_visual}")
+                # Identificador Híbrido: Se não tem chave, usa o número para compor o ID único
+                id_unico = chave if chave else f"MINUTA_{numero_doc}"
 
-                if chave:
-                    # Se for um código de manifesto (119-122), define o tipo. Senão, assume ENTREGA.
-                    tipo_nota = GATILHOS.get(codigo_oc, 'ENTREGA')
-                    
-                    # Guardamos no dicionário para a Etapa 3
-                    if chave not in notas_unicas_dict:
-                        notas_unicas_dict[chave] = {'numero': item["invoice"]["number"], 'tipo': tipo_nota}
-                    elif codigo_oc in GATILHOS:
-                        # Se acharmos um gatilho de manifestação no loop, atualizamos o tipo
-                        notas_unicas_dict[chave]['tipo'] = tipo_nota
+                if id_unico not in notas_unicas_dict:
+                    notas_unicas_dict[id_unico] = {
+                        'chave': chave,
+                        'numero': numero_doc,
+                        'freight_id': freight_id,
+                        'tipo': GATILHOS.get(codigo_oc, 'ENTREGA')
+                    }
+                elif codigo_oc in GATILHOS:
+                    notas_unicas_dict[id_unico]['tipo'] = GATILHOS.get(codigo_oc)
 
             if data_n.get("paging", {}).get("next_id") is None: break
             start_cursor = data_n["paging"]["next_id"]
             time.sleep(1.5)
 
-        # --- ETAPA 3: ENRIQUECIMENTO NOTA A NOTA (MANTIDO ORIGINAL) ---
+        # --- ETAPA 3: ENRIQUECIMENTO OU CADASTRO PADRÃO (MINUTAS) ---
         total_processadas = 0
-        for chave, dados_base in notas_unicas_dict.items():
+        for id_doc, dados_base in notas_unicas_dict.items():
             try:
-                time.sleep(2.1)
+                chave = dados_base['chave']
                 numero = dados_base['numero']
                 tipo_operacao = dados_base['tipo']
-                
-                detalhes = buscar_detalhes_esl_interno(chave, numero, token_geral)
+                freight_id = dados_base['freight_id']
                 
                 destinatario = "DADOS NÃO REPASSADOS PELA ESL"
                 endereco = "CONSULTE O DOCUMENTO FÍSICO"
                 
-                if detalhes:
-                    nome_det = detalhes.get('ioe_rpt_name')
-                    if nome_det: destinatario = str(nome_det).upper()
-                    
-                    rua = detalhes.get('ioe_rpt_mds_line_1', '')
-                    num = detalhes.get('ioe_rpt_mds_number', '')
-                    if rua:
-                        endereco = f"{rua} {num}".strip().upper()
+                # SÓ BUSCA DETALHES SE FOR NF-e (Tiver chave)
+                if chave:
+                    time.sleep(2.1)
+                    detalhes = buscar_detalhes_esl_interno(chave, numero, token_geral)
+                    if detalhes:
+                        nome_det = detalhes.get('ioe_rpt_name')
+                        if nome_det: destinatario = str(nome_det).upper()
+                        
+                        rua = detalhes.get('ioe_rpt_mds_line_1', '')
+                        num = detalhes.get('ioe_rpt_mds_number', '')
+                        if rua:
+                            endereco = f"{rua} {num}".strip().upper()
 
                 with transaction.atomic():
+                    # Busca mantendo compatibilidade com as duas chaves
                     nota_no_manifesto = NotaFiscal.objects.filter(
                         manifesto=manifesto_obj, 
+                        numero_nota=str(numero),
                         chave_acesso=chave
                     ).first()
                     
@@ -355,23 +361,24 @@ def buscar_manifesto_completo_task(self, log_id):
                     NotaFiscal.objects.update_or_create(
                         manifesto=manifesto_obj,
                         chave_acesso=chave,
+                        numero_nota=str(numero),
                         defaults={
-                            'numero_nota': str(numero),
                             'destinatario': destinatario,
                             'endereco_entrega': endereco,
-                            'tipo_operacao': tipo_operacao, # SALVANDO O TIPO IDENTIFICADO
-                            'status': status_final
+                            'tipo_operacao': tipo_operacao,
+                            'status': status_final,
+                            'freight_id_tms': str(freight_id) if freight_id else None # ARMAZENA O ID DO FRETE
                         }
                     )
                 
                 total_processadas += 1
             except Exception as e:
-                logger.warning(f"⚠️ Erro nota {numero}: {e}")
+                logger.warning(f"⚠️ Erro no documento {id_doc}: {e}")
                 continue
 
         log.status = 'PROCESSADO'
         log.save()
-        return f"Manifesto {numero_visual} processado: {total_processadas} notas enriquecidas e classificadas."
+        return f"Manifesto {numero_visual} processado: {total_processadas} itens entre notas e minutas."
 
     except Exception as e:
         logger.error(f"🔴 Erro crítico: {str(e)}")
@@ -410,6 +417,8 @@ def enviar_baixa_esl_task(self, baixa_id):
     from datetime import timezone as dt_timezone
     import requests
     import json
+    from datetime import timezone as dt_timezone
+    import pytz
 
     TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
     URL_ESL = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
@@ -433,10 +442,15 @@ def enviar_baixa_esl_task(self, baixa_id):
         # Certifique-se que o nome do campo no seu model é 'numero_manifesto' 
         # ou o campo onde você guardou o ID de 6 dígitos da ESL (ex: 296803)
         tms_manifest_id = manifesto.numero_manifesto 
-
-        # Data formatada para o padrão da documentação (ISO 8601 com Offset)
-        data_utc = baixa.data_baixa.astimezone(dt_timezone.utc)
-        data_ocorrencia_str = data_utc.strftime('%Y-%m-%dT%H:%M:%S.000-03:00')
+        
+        # 1. Pega a timezone de Brasília
+        fuso_brasilia = pytz.timezone('America/Sao_Paulo')
+        
+        # 2. Converte a data da baixa (que está no banco) para Brasília
+        data_br = baixa.data_baixa.astimezone(fuso_brasilia)
+        
+        # 3. Formata exatamente como a ESL pede (YYYY-MM-DDTHH:MM:SS.000-03:00)
+        data_ocorrencia_str = data_br.strftime('%Y-%m-%dT%H:%M:%S.000-03:00')
 
         # Lógica de fotos (Invoice vs Freight)
         if codigo_ocorrencia in [1, 2]:
@@ -577,3 +591,85 @@ def finalizar_manifesto_tms_task(self, manifesto_id):
     except Exception as exc:
         # Se for erro de rede ou o TMS estiver fora, tenta de novo em 5 min
         raise self.retry(exc=exc, countdown=300)
+    
+@shared_task(bind=True, max_retries=2)
+def enviar_baixa_minuta_task(self, baixa_id):
+    from .models import BaixaNF
+    import requests
+    import json
+    import pytz
+    from django.utils import timezone
+
+    # Configurações de API
+    TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
+    
+    try:
+        # Busca a baixa e a nota relacionada
+        baixa = BaixaNF.objects.select_related('nota_fiscal').get(id=baixa_id)
+        nf = baixa.nota_fiscal
+        
+        # Recupera o ID do Frete que salvamos na busca do manifesto
+        freight_id = nf.freight_id_tms
+        
+        if not freight_id:
+            msg_erro = f"Erro: Documento {nf.numero_nota} não possui ID de Frete vinculado para integração."
+            baixa.log_erro_tms = msg_erro
+            baixa.save()
+            return msg_erro
+
+        # URL específica para ocorrência por Frete (V1)
+        URL_ESL_FRETE = f"https://quickdelivery.eslcloud.com.br/api/v1/freights/{freight_id}/invoice_occurrences"
+
+        # 1. Ajuste de Horário (Brasília GMT-3)
+        fuso_br = pytz.timezone('America/Sao_Paulo')
+        data_ocorrencia_str = baixa.data_baixa.astimezone(fuso_br).strftime('%Y-%m-%dT%H:%M:%S.000-03:00')
+
+        # 2. Montagem do Payload conforme a documentação de Fretes
+        payload = {
+            "invoice_occurrence": {
+                "receiver": baixa.recebedor or "Nao identificado",
+                "document_number": baixa.documento_recebedor or "",
+                "comments": f"Baixa Minuta via App - Obs: {baixa.observacao or ''}",
+                "occurrence_at": data_ocorrencia_str,
+                "latitude": float(baixa.latitude) if baixa.latitude else None,
+                "longitude": float(baixa.longitude) if baixa.longitude else None,
+                "occurrence": {
+                    "code": int(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else 1
+                }
+            }
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {TOKEN}"
+        }
+
+        # 3. Envio da Requisição
+        response = requests.post(
+            URL_ESL_FRETE,
+            json=payload,
+            headers=headers,
+            timeout=30
+        )
+        
+        # Se retornar erro (4xx ou 5xx), levanta exceção para o log
+        response.raise_for_status()
+
+        # ✅ SUCESSO: Atualiza os campos de controle no banco
+        baixa.processado_tms = True
+        baixa.integrado_tms = True
+        baixa.data_integracao = timezone.now()
+        baixa.log_erro_tms = "Sucesso: Baixa de Minuta integrada via Freight ID"
+        baixa.save()
+        
+        return f"Baixa de Minuta {nf.numero_nota} enviada com sucesso."
+
+    except Exception as e:
+        # Registra a falha no log da baixa para conferência na Torre de Controle
+        msg_falha = f"Erro na integração da Minuta: {str(e)}"
+        baixa.log_erro_tms = msg_falha[:500]
+        baixa.integrado_tms = False
+        baixa.save()
+        
+        # Tenta novamente em caso de erro de servidor (5xx)
+        raise self.retry(exc=e, countdown=60)

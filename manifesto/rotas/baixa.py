@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from manifesto.models import NotaFiscal, BaixaNF, Ocorrencia
 from django.db import transaction
-from manifesto.tasks import enviar_baixa_esl_task
+from manifesto.tasks import enviar_baixa_esl_task, enviar_baixa_minuta_task
 from ftplib import FTP
 from io import BytesIO
 from django.conf import settings # Importe para usar as chaves do settings
@@ -43,36 +43,40 @@ class RegistrarBaixaView(APIView):
 
     def post(self, request):
         chave_acesso = request.data.get('chave_acesso')
+        numero_nota = request.data.get('numero_nota') # 👈 Pegamos o número para caso de Minuta
         codigo_tms = request.data.get('ocorrencia_codigo')
         foto_arquivo = request.FILES.get('foto')
-        
-        # Este valor vindo do JS é o número visual (ex: 56892)
-        numero_mft = request.data.get('manifesto_id') 
+        numero_mft = request.data.get('manifest_id') 
         
         try:
             with transaction.atomic():
-                # --- BUSCA CORRIGIDA ---
-                # Usamos manifesto__numero_manifesto para buscar pelo número visual que o motorista conhece
-                if numero_mft:
-                    nf = NotaFiscal.objects.get(
-                        chave_acesso=chave_acesso, 
-                        manifesto__numero_manifesto=str(numero_mft) # 👈 O SEGREDO ESTÁ AQUI
-                    )
+                # --- BUSCA INTELIGENTE (HÍBRIDA) ---
+                filtros = {}
+                
+                # Se tem chave, busca pela chave. Se não, busca pelo número (Minuta)
+                if chave_acesso and chave_acesso != "null" and chave_acesso != "":
+                    filtros['chave_acesso'] = chave_acesso
                 else:
-                    # Fallback caso o JS falhe em enviar o ID
-                    nf = NotaFiscal.objects.get(
-                        chave_acesso=chave_acesso, 
-                        manifesto__motorista__user=request.user,
-                        manifesto__status='EM_TRANSPORTE'
-                    )
+                    filtros['numero_nota'] = numero_nota
+
+                # Vincula ao manifesto correto
+                if numero_mft:
+                    filtros['manifesto__numero_manifesto'] = str(numero_mft)
+                else:
+                    filtros['manifesto__motorista__user'] = request.user
+                    filtros['manifesto__status'] = 'EM_TRANSPORTE'
+
+                # Tenta encontrar a nota ou minuta
+                nf = NotaFiscal.objects.get(**filtros)
 
                 ocorrencia = Ocorrencia.objects.get(codigo_tms=codigo_tms) 
 
-                # --- LÓGICA DE UPLOAD EXTERNO ---
+                # --- LÓGICA DE UPLOAD ---
                 url_final_foto = None
                 if foto_arquivo:
-                    # Usamos o ID da nota para garantir que a foto de hoje não apague a de ontem no FTP
-                    nome_arquivo = f"{nf.id}_{chave_acesso}.jpg"
+                    # Nome único para evitar sobreposição (ID da nota + identificador visual)
+                    id_foto = chave_acesso if nf.chave_acesso else f"minuta_{nf.numero_nota}"
+                    nome_arquivo = f"{nf.id}_{id_foto}.jpg"
                     url_final_foto = upload_via_ftp(foto_arquivo.read(), nome_arquivo)
 
                 # --- REGISTRO DA BAIXA ---
@@ -92,14 +96,23 @@ class RegistrarBaixaView(APIView):
                 nf.status = 'BAIXADA' if baixa.tipo == 'ENTREGA' else 'OCORRENCIA'
                 nf.save()
                 
-                # Descomente para integrar com ESL
-                enviar_baixa_esl_task.delay(baixa.id)
+                # --- DISPARO DA TASK CORRETA (O CÉREBRO) ---
+                if nf.chave_acesso:
+                    # Se for NF-e normal, usa o endpoint de chaves
+                    enviar_baixa_esl_task.delay(baixa.id)
+                    msg_log = "NF-e enviada para Task padrão."
+                else:
+                    # Se for Minuta (sem chave), usa o endpoint de fretes (v1/freights)
+                    enviar_baixa_minuta_task.delay(baixa.id)
+                    msg_log = "Minuta enviada para Task de Fretes."
+                
+                print(f"BAIXA REGISTRADA: {msg_log}")
 
-            return Response({'status': 'sucesso', 'mensagem': 'Baixa registrada com sucesso!'})
+            return Response({'status': 'sucesso', 'mensagem': 'Baixa registrada e integração iniciada!'})
 
         except NotaFiscal.DoesNotExist:
-            # Esse erro agora só dará se o manifesto 56892 realmente não tiver essa nota vinculada no banco
-            return Response({'erro': f'Nota {chave_acesso} não encontrada no manifesto {numero_mft}.'}, status=404)
+            id_err = chave_acesso if chave_acesso else numero_nota
+            return Response({'erro': f'Documento {id_err} não encontrado no manifesto {numero_mft}.'}, status=404)
         except Exception as e:
             print(f"ERRO NA BAIXA: {str(e)}") 
             return Response({'erro': str(e)}, status=400)

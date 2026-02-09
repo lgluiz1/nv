@@ -3,7 +3,7 @@
 {% block title %}{{ titulo }}{% endblock %}
 {% block usuario %}{{ usuario_nome }}{% endblock %}
 {% block extra_head %}
-<meta http-equiv="refresh" content="30">
+<meta http-equiv="refresh" content="180">
 {% endblock %}
 
 {% block content %}
@@ -11,8 +11,9 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h3 class="fw-bold">Gestão de Manifestos</h3>
         <span class="badge bg-light text-dark border shadow-sm p-2">
-            <i class="bi bi-arrow-clockwise me-1"></i> Atualizando em 30s
-        </span>
+        <i class="bi bi-arrow-clockwise me-1 text-primary"></i> 
+        Próxima atualização em: <span id="timer-regressivo" class="fw-bold">03:00</span>
+    </span>
     </div>
 
     <div class="card border-0 shadow-sm mb-4">
@@ -288,6 +289,56 @@ function salvarEdicaoManifesto(event, id) {
     // Passando o parâmetro 'q' (ou o nome que você usa no seu filtro de busca)
     window.location.href = `/notas-fiscais/?q=${chaveAcesso}`;
 }
+
+// 3. ADICIONE o novo cronômetro regressivo
+// Configuração do cronômetro: 180 segundos = 3 minutos
+let tempoRestante = 180; 
+
+function iniciarTimerRegressivo() {
+    const display = document.getElementById('timer-regressivo');
+    
+    const intervalo = setInterval(function () {
+        // Calcula minutos e segundos
+        let minutos = Math.floor(tempoRestante / 60);
+        let segundos = tempoRestante % 60;
+
+        // CORREÇÃO: Usando a variável correta 'minutos'
+        let minFormatado = minutos < 10 ? '0' + minutos : minutos;
+        let segFormatado = segundos < 10 ? '0' + segundos : segundos;
+
+        // Atualiza o texto na tela
+        if (display) {
+            display.innerText = `${minFormatado}:${segFormatado}`;
+        }
+
+        // Se chegar a zero, limpa o intervalo e recarrega
+        if (--tempoRestante < 0) {
+            clearInterval(intervalo);
+            location.reload();
+        }
+    }, 1000);
+}
+
+// Inicia assim que a página carregar
+document.addEventListener('DOMContentLoaded', iniciarTimerRegressivo);
+
+// Função auxiliar para pegar o cookie CSRF (caso não tenha no seu arquivo)
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+
 </script>
 
 {% endblock %}
