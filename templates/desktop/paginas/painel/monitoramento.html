@@ -87,8 +87,10 @@
     // Adicione isso ao final do seu template ou num arquivo .js separado
 // Substitua sua linha atual por estas:
 const ws_scheme = window.location.protocol === "https:" ? "wss" : "ws";
-const socket = new WebSocket(ws_scheme + '://' + window.location.host + '/ws/painel-logistico/');
+const ws_url = ws_scheme + "://" + window.location.host + "/ws/painel-logistico/";
 
+const socket = new WebSocket(ws_url);
+    
 socket.onmessage = function(e) {
     const data = JSON.parse(e.data);
     const mID = data.dados.manifesto_id;
