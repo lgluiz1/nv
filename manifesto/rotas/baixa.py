@@ -93,7 +93,7 @@ class RegistrarBaixaView(APIView):
                 nf.save()
                 
                 # Descomente para integrar com ESL
-                #enviar_baixa_esl_task.delay(baixa.id)
+                enviar_baixa_esl_task.delay(baixa.id)
 
             return Response({'status': 'sucesso', 'mensagem': 'Baixa registrada com sucesso!'})
 
@@ -195,7 +195,7 @@ class RegistrarBaixaOperacionalView(APIView):
                     # 4. FILA COM DELAY (Countdown para não sobrecarregar o TMS)
                     # O segredo: contador * 2 segundos entre cada nota
                     delay = contador * 2
-                    #enviar_baixa_esl_task.apply_async(args=[baixa.id], countdown=delay)
+                    enviar_baixa_esl_task.apply_async(args=[baixa.id], countdown=delay)
                     
                     contador += 1
 
