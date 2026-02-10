@@ -99,11 +99,11 @@ class RegistrarBaixaView(APIView):
                 # --- DISPARO DA TASK CORRETA (O CÉREBRO) ---
                 if nf.chave_acesso:
                     # Se for NF-e normal, usa o endpoint de chaves
-                    enviar_baixa_esl_task.delay(baixa.id)
+                    #enviar_baixa_esl_task.delay(baixa.id)
                     msg_log = "NF-e enviada para Task padrão."
                 else:
                     # Se for Minuta (sem chave), usa o endpoint de fretes (v1/freights)
-                    enviar_baixa_minuta_task.delay(baixa.id)
+                    #enviar_baixa_minuta_task.delay(baixa.id)
                     msg_log = "Minuta enviada para Task de Fretes."
                 
                 print(f"BAIXA REGISTRADA: {msg_log}")

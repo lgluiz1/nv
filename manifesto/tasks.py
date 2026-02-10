@@ -216,7 +216,9 @@ def iniciar_transporte_manifesto_tms_task(self, numero_manifesto):
 
 @shared_task(bind=True, max_retries=3)
 def buscar_manifesto_completo_task(self, log_id):
-    from manifesto.models import Manifesto, NotaFiscal, ManifestoBuscaLog
+    from manifesto.models import Manifesto, NotaFiscal, ManifestoBuscaLog    
+    from manifesto.services import enviar_painel
+    from django.db import transaction
     from usuarios.models import Filial
     from django.db import transaction
     import requests
@@ -348,7 +350,7 @@ def buscar_manifesto_completo_task(self, log_id):
                         if rua:
                             endereco = f"{rua} {num}".strip().upper()
 
-                with transaction.atomic():
+                
                     # Busca mantendo compatibilidade com as duas chaves
                     nota_no_manifesto = NotaFiscal.objects.filter(
                         manifesto=manifesto_obj, 
@@ -372,12 +374,20 @@ def buscar_manifesto_completo_task(self, log_id):
                     )
                 
                 total_processadas += 1
+                # eNVIA ATUALIZACAO PARA TASKS DE BAIXA E PARA O PAINEL A CADA ITEM PROCESSADO
+                if total_processadas % 5 == 0:
+                    enviar_painel(manifesto_obj)
+                
             except Exception as e:
                 logger.warning(f"⚠️ Erro no documento {id_doc}: {e}")
                 continue
 
         log.status = 'PROCESSADO'
         log.save()
+        # 🔔 Atualiza o painel somente depois que tudo foi salvo
+
+        transaction.on_commit(lambda: enviar_painel(manifesto_obj))
+
         return f"Manifesto {numero_visual} processado: {total_processadas} itens entre notas e minutas."
 
     except Exception as e:

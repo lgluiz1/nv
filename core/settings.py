@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'manifesto.apps.ManifestoConfig',
     
     
     # Terceiros
@@ -51,7 +52,7 @@ INSTALLED_APPS = [
     
     # Nossas Apps
     'usuarios',
-    'manifesto',   # CORREÇÃO: Deve ser 'manifestos' (plural)
+    #'manifesto',   # CORREÇÃO: Deve ser 'manifestos' (plural)
     'mobile',
     'operacional',
 ]
