@@ -550,6 +550,7 @@ def finalizar_manifesto_tms_task(self, manifesto_id):
     from manifesto.models import Manifesto
     import requests
     from django.utils import timezone
+    import pytz
 
     try:
         manifesto = Manifesto.objects.get(id=manifesto_id)
@@ -557,39 +558,70 @@ def finalizar_manifesto_tms_task(self, manifesto_id):
         if not manifesto.manifesto_id_tms:
             return f"Erro: Manifesto {manifesto.numero_manifesto} sem ID interno do TMS."
 
+        # 1. Define a data de fechamento (Usa a do banco ou a de agora)
+        # Formato ISO com fuso horário de Brasília (-03:00)
+        fuso_br = pytz.timezone('America/Sao_Paulo')
+        data_fim = manifesto.data_finalizacao or timezone.now()
+        data_iso = data_fim.astimezone(fuso_br).strftime('%Y-%m-%dT%H:%M:%S-03:00')
+
         url_graphql = "https://quickdelivery.eslcloud.com.br/graphql"
         token = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
 
+        # 2. Mutation simplificada (Removido closingKm do retorno e do input se possível)
         mutation = """
-        mutation manifestClose($id: ID, $sequenceCode: String, $params: ManifestCloseInput!) {
-          manifestClose(id: $id, sequenceCode: $sequenceCode, params: $params) {
+        mutation manifestClose($id: ID, $params: ManifestCloseInput!) {
+          manifestClose(id: $id, params: $params) {
             success
             errors
-            resource { id closedAt closingKm }
+            resource { 
+                id 
+                closedAt 
+            }
           }
         }
         """
 
+        # 3. Variáveis apenas com a Data de Fechamento
         variables = {
-            "id": manifesto.manifesto_id_tms,
+            "id": str(manifesto.manifesto_id_tms),
             "params": {
-                "closedAt": manifesto.data_finalizacao.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
-                "closingKm": float(manifesto.km_final)
+                "closedAt": data_iso
+                # O KM foi removido daqui
             }
         }
 
-        headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {token}'}
-        response = requests.post(url_graphql, json={"query": mutation, "variables": variables}, timeout=30)
-        res_data = response.json()
+        headers = {
+            'Content-Type': 'application/json', 
+            'Authorization': f'Bearer {token}'
+        }
 
-        if res_data.get('data', {}).get('manifestClose', {}).get('success'):
-            return f"Manifesto {manifesto.numero_manifesto} fechado com sucesso no TMS."
+        # 4. Chamada para a ESL
+        response = requests.post(url_graphql, json={"query": mutation, "variables": variables}, timeout=30)
+        
+        if not response.text:
+             raise Exception("Resposta vazia da ESL.")
+
+        res_data = response.json()
+        result = res_data.get('data', {}).get('manifestClose', {})
+
+        # 5. Validação de Sucesso
+        if result.get('success'):
+            manifesto.status = 'FINALIZADO'
+            manifesto.save()
+            return f"Manifesto {manifesto.numero_manifesto} finalizado com sucesso no TMS."
         else:
-            erro = res_data.get('data', {}).get('manifestClose', {}).get('errors')
-            raise Exception(f"TMS recusou: {erro}")
+            erros = result.get('errors', 'Erro desconhecido')
+            
+            # Se já estiver fechado, consideramos sucesso para não travar a fila
+            if "already closed" in str(erros).lower():
+                manifesto.status = 'FINALIZADO'
+                manifesto.save()
+                return f"Manifesto {manifesto.numero_manifesto} já constava como fechado."
+            
+            raise Exception(f"TMS recusou fechamento: {erros}")
 
     except Exception as exc:
-        # Se for erro de rede ou o TMS estiver fora, tenta de novo em 5 min
+        # Tenta novamente se houver erro de rede ou instabilidade
         raise self.retry(exc=exc, countdown=300)
     
 @shared_task(bind=True, max_retries=2)
