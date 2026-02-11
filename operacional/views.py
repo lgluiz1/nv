@@ -122,10 +122,17 @@ class DashboardView(TemplateView):
 
         # --- 1. CARDS DE RESUMO ---
         # Filtramos manifestos do dia para basear as notas
+        # 1. Busca os manifestos do dia
         manifestos_do_dia = Manifesto.objects.filter(data_criacao__range=(hoje_inicio, hoje_fim))
         notas_do_dia = NotaFiscal.objects.filter(manifesto__in=manifestos_do_dia)
 
-        context['mfts_ativos'] = Manifesto.objects.filter(status='EM_TRANSPORTE').count()
+        # para filtrar as notas que pertencem aos manifestos ativos do dia
+        context['notas_em_transporte'] = NotaFiscal.objects.filter(
+            status='PENDENTE',
+            manifesto__in=manifestos_do_dia, # Notas que pertencem aos manifestos do dia...
+            manifesto__status='EM_TRANSPORTE' # ...e que o manifesto esteja em transporte
+        ).count()
+        context['mfts_ativos'] = manifestos_do_dia.filter(status='EM_TRANSPORTE').count()
         context['total_notas'] = notas_do_dia.filter(status='BAIXADA').count()
         context['notas_ocorrencia'] = notas_do_dia.filter(status='OCORRENCIA').count()
         # Pega todas as notas em transporte junto com as que foram baixadas e com ocorrencias 
