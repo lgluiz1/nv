@@ -451,78 +451,95 @@ def salvar_edicao_manifesto_view(request, manifesto_id):
         }, status=500)
     
 
-class MotoristasPerformanceView(ListView):
+from datetime import datetime, time
+import pytz
+from django.db.models import Count, Q, ExpressionWrapper, FloatField, Case, When, Value
+from django.db.models.functions import Cast, Round
+from django.views.generic import ListView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.utils import timezone
+from usuarios.models import Motorista
+
+class MotoristasPerformanceView(LoginRequiredMixin, ListView):
     model = Motorista
     template_name = 'desktop/paginas/motoristas_list.html'
     context_object_name = 'motoristas'
+    login_url = '/login/'
 
     def get_queryset(self):
-        # 1. Captura as datas do filtro (GET)
-        self.data_inicio = self.request.GET.get('data_inicio')
-        self.data_fim = self.request.GET.get('data_fim')
+        # 1. Base: Apenas quem é motorista
+        queryset = Motorista.objects.filter(tipo_usuario='MOTORISTA')
 
-        # 2. Criamos o filtro dinâmico para as anotações
-        # Filtramos pela data da baixa (quando a entrega realmente aconteceu)
+        # 2. Captura datas do filtro
+        data_inicio_str = self.request.GET.get('data_inicio')
+        data_fim_str = self.request.GET.get('data_fim')
+
         filtros_periodo = Q()
-        if self.data_inicio:
-            filtros_periodo &= Q(manifestos__notas_fiscais__baixa_info__data_baixa__date__gte=self.data_inicio)
-        if self.data_fim:
-            filtros_periodo &= Q(manifestos__notas_fiscais__baixa_info__data_baixa__date__lte=self.data_fim)
 
-        # 3. Query principal com anotações filtradas
-        queryset = Motorista.objects.annotate(
-            # Total de notas no período
-            total_notas=Count(
-                'manifestos__notas_fiscais',
-                filter=filtros_periodo
-            ),
+        if data_inicio_str and data_fim_str:
+            try:
+                tz = pytz.timezone('America/Sao_Paulo')
+                
+                # Converte strings para objetos date
+                d_inicio = datetime.strptime(data_inicio_str, '%Y-%m-%d').date()
+                d_fim = datetime.strptime(data_fim_str, '%Y-%m-%d').date()
+                
+                # Cria o range com fuso horário (mesma lógica da sua outra view)
+                inicio_dt = tz.localize(datetime.combine(d_inicio, time.min))
+                fim_dt = tz.localize(datetime.combine(d_fim, time.max))
+                
+                # Define o filtro que será usado nas anotações
+                filtros_periodo = Q(manifestos__data_criacao__range=(inicio_dt, fim_dt))
+                
+                # OBRIGATÓRIO: Filtra o queryset principal para garantir que os counts 
+                # só olhem para motoristas que tiveram manifestos nesse range
+                queryset = queryset.filter(manifestos__data_criacao__range=(inicio_dt, fim_dt)).distinct()
+                
+            except (ValueError, TypeError):
+                pass
+
+        # 3. Agora fazemos os cálculos baseados no filtro de período
+        queryset = queryset.annotate(
+            total_mfts=Count('manifestos', distinct=True, filter=filtros_periodo),
             
-            # Notas baixadas com sucesso no período
             baixas_sucesso=Count(
                 'manifestos__notas_fiscais', 
                 filter=filtros_periodo & Q(manifestos__notas_fiscais__status='BAIXADA')
             ),
             
-            # Ocorrências 20 (Falta de tempo) no período
             ocorrencias_20=Count(
                 'manifestos__notas_fiscais', 
                 filter=filtros_periodo & Q(manifestos__notas_fiscais__baixa_info__ocorrencia__codigo_tms='20')
             ),
-            
-            # Total de manifestos distintos no período
-            total_mfts=Count(
-                'manifestos', 
-                distinct=True,
+
+            total_notas_geral=Count(
+                'manifestos__notas_fiscais', 
                 filter=filtros_periodo
             )
-        )
-        
+        ).annotate(
+            reputacao=ExpressionWrapper(
+                Round(
+                    Case(
+                        When(total_notas_geral__gt=0, 
+                             then=(Cast('baixas_sucesso', FloatField()) / Cast('total_notas_geral', FloatField())) * 100),
+                        default=Value(0.0),
+                    ), 1
+                ),
+                output_field=FloatField()
+            )
+        ).order_by('-reputacao', '-baixas_sucesso')
+
         return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
-        # 4. Cálculo de Reputação (Score)
-        motoristas_com_score = []
-        for m in context['motoristas']:
-            if m.total_notas > 0:
-                base_score = (m.baixas_sucesso / m.total_notas) * 100
-                penalidade = (m.ocorrencias_20 * 15) # Aumentei a penalidade para a ocorrência 20
-                m.reputacao = max(0, int(base_score - penalidade))
-            else:
-                m.reputacao = 0
-            motoristas_com_score.append(m)
-        
-        # 5. Reordenar pelo Score (Reputação) para o Pódio bater com os dados
-        context['motoristas'] = sorted(motoristas_com_score, key=lambda x: x.reputacao, reverse=True)
-        
-        # 6. Dados extras para o template
-        context['titulo'] = "Performance de Motoristas"
-        context['data_inicio'] = self.data_inicio
-        context['data_fim'] = self.data_fim
+        context['titulo'] = 'Performance de Motoristas'
         context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
+        context['data_inicio'] = self.request.GET.get('data_inicio', '')
+        context['data_fim'] = self.request.GET.get('data_fim', '')
         return context
     
+# WS PARA ATUALIZAR O PAINEL EM TEMPO REAL    
 @require_POST
 def motorista_cadastrar(request):
     import re

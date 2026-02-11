@@ -4,14 +4,47 @@
 {% block usuario %}{{ usuario_nome }}{% endblock %}
 {% block content %}
 <div class="container-fluid py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h3 class="fw-bold mb-0">{{ titulo }}</h3>
-            <p class="text-muted">Análise de reputação e eficiência operacional</p>
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <div>
+                <h3 class="fw-bold mb-0">
+                    {{ titulo }}
+                    <button class="btn btn-link p-0 ms-2 text-primary border-0" 
+                            type="button" 
+                            data-bs-toggle="collapse" 
+                            data-bs-target="#explicaPerformance" 
+                            style="vertical-align: middle;">
+                        <i class="bi bi-question-circle-fill" style="font-size: 1.3rem;"></i>
+                    </button>
+                </h3>
+                <p class="text-muted mb-0">Análise de reputação e eficiência operacional</p>
+            </div>
+            <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#modalCadastro">
+                <i class="bi bi-person-plus me-1"></i> Novo Motorista
+            </button>
         </div>
-        <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#modalCadastro">
-            <i class="bi bi-person-plus me-1"></i> Novo Motorista
-        </button>
+
+        <div class="col-12 mt-3">
+            <div class="collapse" id="explicaPerformance">
+                <div class="card card-body border-0 shadow-sm mb-4 position-relative" style="border-left: 5px solid #0d6efd !important; background-color: #f8faff;">
+                    <button type="button" class="btn-close position-absolute" style="right: 15px; top: 15px;" data-bs-toggle="collapse" data-bs-target="#explicaPerformance" aria-label="Close"></button>
+                    
+                    <h6 class="fw-bold text-primary"><i class="bi bi-bar-chart-line me-2"></i>Como o Score é calculado?</h6>
+                    <hr class="my-2">
+                    <p class="small mb-2 text-dark">
+                        O <strong>Score de Reputação</strong> é uma métrica de eficiência baseada nos manifestos criados no período selecionado.
+                    </p>
+                    <ul class="small text-muted mb-3">
+                        <li><strong>Sucessos:</strong> Notas entregues e baixadas corretamente.</li>
+                        <li><strong>Falta de Tempo (20):</strong> Penaliza o score, pois indica que a rota planejada não foi concluída.</li>
+                        <li><strong>Notas Pendentes:</strong> Notas sem interação também reduzem a performance (falha de compromisso).</li>
+                    </ul>
+                    <div class="bg-white p-2 rounded border d-inline-block">
+                        <code class="text-primary fw-bold">Fórmula: (Notas Entregues ÷ Total de Notas do Manifesto) × 100</code>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="card border-0 shadow-sm mb-4">
@@ -218,6 +251,17 @@
     .bg-danger-subtle { background-color: rgba(220, 53, 69, 0.1) !important; }
     .bg-warning-subtle { background-color: rgba(255, 193, 7, 0.1) !important; }
     .bg-secondary-subtle { background-color: rgba(108, 117, 125, 0.1) !important; }
+    .btn-link {
+    text-decoration: none;
+    transition: transform 0.2s;
+}
+.btn-link:hover {
+    transform: scale(1.2);
+}
+#explicaPerformance .card {
+    background-color: #f8faff;
+    border-left: 5px solid #0d6efd !important;
+}
 </style>
 
 <script>
