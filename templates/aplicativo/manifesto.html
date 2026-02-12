@@ -21,7 +21,7 @@
     </style>
 </head>
 <body>
-<header class="app-header fixed-top bg-white shadow-sm">
+    <header class="app-header fixed-top bg-white shadow-sm">
     <div class="container-fluid h-100 d-flex align-items-center justify-content-between px-3">
 
         <!-- LADO ESQUERDO -->
@@ -439,6 +439,38 @@
     </div>
 </div>
 
+<div class="modal fade" id="modalSolicitarNotificacao" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content text-center p-3">
+
+      <div class="modal-body">
+        <div class="mb-3">
+          <i class="bi bi-bell" style="font-size:40px;"></i>
+        </div>
+
+        <h5 id="tituloNotificacao">Ative as Notificações</h5>
+        <p id="textoNotificacao">
+          Receba alertas de novos manifestos e chamados em tempo real.
+        </p>
+
+        <button id="btnAtivarNotificacao"
+                class="btn btn-primary w-100"
+                onclick="ativarNotificacoesManual()">
+          Sim, quero receber
+        </button>
+
+        <button class="btn btn-link mt-2" onclick="adiarNotificacao()">
+          Agora não, me lembre amanhã
+        </button>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+
 <span id="manifesto-id-display" style="display: none;"></span>
 <script src="https://unpkg.com/@zxing/library@latest"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -488,6 +520,150 @@ async function recarregarPWA() {
     // O reload(true) força o navegador a ignorar o cache do disco
     window.location.reload(true);
 }
+
+// Função de Logout
+document.addEventListener("DOMContentLoaded", function () {
+    verificarStatusNotificacao();
+});
+
+function atualizarModalStatus(titulo, texto, esconderBotao = true) {
+    const tituloEl = document.getElementById("tituloNotificacao");
+    const textoEl = document.getElementById("textoNotificacao");
+    const btnEl = document.getElementById("btnAtivarNotificacao");
+
+    if (tituloEl) tituloEl.innerText = titulo;
+    if (textoEl) textoEl.innerText = texto;
+    if (btnEl && esconderBotao) btnEl.style.display = "none";
+}
+
+function fecharModalDepois(ms = 1500) {
+    setTimeout(() => {
+        fecharModal();
+    }, ms);
+}
+function verificarStatusNotificacao() {
+    if (localStorage.getItem("webpush_aceitou") === "true" || Notification.permission === "granted") {
+        return;
+    }
+
+    const dataAdiada = localStorage.getItem("webpush_data_adiada");
+    const agora = new Date().getTime();
+    const vinteQuatroHoras = 24 * 60 * 60 * 1000;
+
+    if (!dataAdiada || (agora - parseInt(dataAdiada)) > vinteQuatroHoras) {
+        setTimeout(() => {
+            const modalElement = document.getElementById('modalSolicitarNotificacao');
+            const modalInstance = new bootstrap.Modal(modalElement);
+            modalInstance.show();
+        }, 5000);
+    }
+}
+
+function adiarNotificacao() {
+    localStorage.setItem("webpush_data_adiada", new Date().getTime().toString());
+    fecharModal();
+}
+
+function urlB64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
+async function ativarNotificacoesManual() {
+    try {
+        // Mostra status inicial
+        atualizarModalStatus("Aguarde...", "Ativando notificações...");
+
+        const permission = await Notification.requestPermission();
+
+        if (permission !== 'granted') {
+            atualizarModalStatus(
+                "Permissão negada",
+                "Você bloqueou as notificações no navegador.",
+                false
+            );
+            return;
+        }
+
+        const registration = await navigator.serviceWorker.ready;
+
+        const vapidPublicKey = "BDBRd8eEkZHd6ZY_j3W4kaDZVuLr0MmrMqXJSox83EHT_re79BA01ViC3RzOy0P7J6UYcqOmhIyLqHJzdVUo8DQ";
+        const applicationServerKey = urlB64ToUint8Array(vapidPublicKey);
+
+        const subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: applicationServerKey
+        });
+
+        const subJSON = subscription.toJSON();
+
+        const payload = {
+            subscription: subJSON,
+            group: "motoristas"
+        };
+
+        console.log("Payload enviado:", payload);
+
+        const tokenJWT = localStorage.getItem('accessToken');
+
+        const response = await fetch('/app/api/v1/save-webpush/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${tokenJWT}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            localStorage.setItem("webpush_aceitou", "true");
+            localStorage.removeItem("webpush_data_adiada");
+
+            atualizarModalStatus(
+                "Tudo pronto!",
+                "Notificações ativadas com sucesso."
+            );
+
+            fecharModalDepois(1500);
+        } else {
+            console.error(data);
+            atualizarModalStatus(
+                "Erro ao salvar",
+                data.error || "Erro desconhecido.",
+                false
+            );
+        }
+
+    } catch (error) {
+        console.error("Erro no Push:", error);
+
+        atualizarModalStatus(
+            "Erro",
+            "Falha ao ativar notificações.",
+            false
+        );
+    }
+}
+
+
+function fecharModal() {
+    const modalElement = document.getElementById('modalSolicitarNotificacao');
+    const modalInstance = bootstrap.Modal.getInstance(modalElement);
+    if (modalInstance) modalInstance.hide();
+}
+
 </script>
 <script src="{% static 'js/serviceworker.js' %}?v=1.3"></script> 
     <script src="/static/js/login_motorista/authFetch.js"></script>

@@ -31,11 +31,52 @@ def app_view(request):
     # Cia aera e rodoviaria
     cias = Ocorrencia.objects.filter(codigo_tms__in=['50', '51']).order_by('codigo_tms')
     
+    
     return render(request, 'aplicativo/manifesto.html', {
         'sucesso': sucesso,
         'problemas': problemas,
-        'cia': cias
+        'cia': cias,
     })
 # Nota: A autenticação (login_required) aqui é apenas para evitar que 
 # a página seja vista. A verdadeira segurança da aplicação está nas 
 # Views da API, que requerem o token JWT.
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from mobile.models import WebPushSubscription
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def save_webpush_token(request):
+    try:
+        sub = request.data.get('subscription')
+
+        if not sub:
+            return Response({"error": "Subscription não enviada"}, status=400)
+
+        endpoint = sub.get('endpoint')
+        keys = sub.get('keys', {})
+
+        p256dh = keys.get('p256dh')
+        auth = keys.get('auth')
+
+        if not endpoint or not p256dh or not auth:
+            return Response({"error": "Dados incompletos do subscription"}, status=400)
+
+        obj, created = WebPushSubscription.objects.update_or_create(
+            endpoint=endpoint,
+            defaults={
+                "user": request.user,
+                "p256dh": p256dh,
+                "auth": auth,
+                "browser": request.META.get('HTTP_USER_AGENT', ''),
+                "group": request.data.get('group', 'motoristas')
+            }
+        )
+
+        return Response({"message": "Salvo com sucesso"})
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=400)

@@ -1,7 +1,7 @@
 # operacional/urls.py
 from django.urls import path
 from operacional.views import DashboardView, login_operacional_view, NotasFiscaisListView ,detalhes_nota_fiscal_view, ManifestosMonitoramentoView, MotoristasPerformanceView
-from operacional.rotas import buscar_e_importar_nfe, listar_manifestos_select, sincronizar_nota_tms_view
+from operacional.rotas import buscar_e_importar_nfe, listar_manifestos_select, sincronizar_nota_tms_view, api_rastreio_manifesto
 from operacional import views
 
 app_name = 'operacional'
@@ -24,4 +24,5 @@ urlpatterns = [
     path('motoristas/', MotoristasPerformanceView.as_view(), name='motoristas'),
     path('motoristas/cadastrar/', views.motorista_cadastrar, name='motorista_cadastrar'),
     path('motoristas/editar/', views.motorista_editar, name='motorista_editar'),
+    path('api/rastreio/<int:manifesto_id>/', api_rastreio_manifesto, name='api_rastreio_manifesto'),
 ]

@@ -163,3 +163,51 @@ def sincronizar_nota_tms_view(request, nota_id):
         return JsonResponse({'sucesso': False, 'mensagem': 'Nota não encontrada.'}, status=404)
     except Exception as e:
         return JsonResponse({'sucesso': False, 'mensagem': str(e)}, status=500)
+    
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from manifesto.models import Manifesto, NotaFiscal
+
+
+def api_rastreio_manifesto(request, manifesto_id):
+    # Busca o manifesto pelo número operacional (ex: 58134)
+    manifesto = get_object_or_404(Manifesto, numero_manifesto=manifesto_id)
+    
+    # Buscamos as notas do manifesto que possuem registro de baixa com GPS
+    # Usamos baixa_info (related_name) para chegar na latitude/longitude
+    notas = manifesto.notas_fiscais.filter(
+        baixa_info__latitude__isnull=False, 
+        baixa_info__longitude__isnull=False
+    ).prefetch_related('baixa_info').distinct()
+
+    pontos = []
+    for nota in notas:
+        # Como baixa_info é um related_name de uma ForeignKey, 
+        # pegamos o primeiro registro de baixa associado a essa nota
+        baixa = nota.baixa_info.first() 
+        
+        if baixa:
+            pontos.append({
+                'nota': nota.numero_nota,
+                'status': nota.status,
+                'lat': float(baixa.latitude),
+                'lng': float(baixa.longitude),
+                'horario': baixa.data_baixa.strftime('%H:%M'),
+                'tipo': baixa.get_tipo_display()
+            })
+
+    # Ordenar os pontos pelo horário da baixa para o rastro fazer sentido
+    pontos = sorted(pontos, key=lambda x: x['horario'])
+
+    # Coordenadas da base RDexpresso (Ponto de partida)
+    dados_filial = {
+        'nome': manifesto.filial.nome if manifesto.filial else "RDexpresso",
+        'lat': -22.7873755, 
+        'lng': -43.2886202
+    }
+
+    return JsonResponse({
+        'filial': dados_filial,
+        'pontos': pontos,
+        'motorista': manifesto.motorista.nome_completo if manifesto.motorista else "Motorista não identificado"
+    })

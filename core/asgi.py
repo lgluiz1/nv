@@ -1,3 +1,4 @@
+# core/asgi.py
 import os
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack

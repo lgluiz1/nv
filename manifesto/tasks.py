@@ -326,38 +326,39 @@ def buscar_manifesto_completo_task(self, log_id):
             time.sleep(1.5)
 
         # --- ETAPA 3: ENRIQUECIMENTO OU CADASTRO PADRÃO (MINUTAS) ---
+        # --- ETAPA 3: ENRIQUECIMENTO OU CADASTRO PADRÃO (MINUTAS) ---
         total_processadas = 0
         for id_doc, dados_base in notas_unicas_dict.items():
             try:
-                chave = dados_base['chave']
+                chave = dados_base['chave']  # Pode ser None
                 numero = dados_base['numero']
                 tipo_operacao = dados_base['tipo']
                 freight_id = dados_base['freight_id']
-                
+
                 destinatario = "DADOS NÃO REPASSADOS PELA ESL"
                 endereco = "CONSULTE O DOCUMENTO FÍSICO"
-                
-                # SÓ BUSCA DETALHES SE FOR NF-e (Tiver chave)
+
+                # --- NF-e (tem chave) ---
                 if chave:
                     time.sleep(2.1)
                     detalhes = buscar_detalhes_esl_interno(chave, numero, token_geral)
                     if detalhes:
                         nome_det = detalhes.get('ioe_rpt_name')
-                        if nome_det: destinatario = str(nome_det).upper()
-                        
+                        if nome_det: 
+                            destinatario = str(nome_det).upper()
+
                         rua = detalhes.get('ioe_rpt_mds_line_1', '')
                         num = detalhes.get('ioe_rpt_mds_number', '')
                         if rua:
                             endereco = f"{rua} {num}".strip().upper()
 
-                
                     # Busca mantendo compatibilidade com as duas chaves
                     nota_no_manifesto = NotaFiscal.objects.filter(
                         manifesto=manifesto_obj, 
                         numero_nota=str(numero),
                         chave_acesso=chave
                     ).first()
-                    
+
                     status_final = nota_no_manifesto.status if nota_no_manifesto else 'PENDENTE'
 
                     NotaFiscal.objects.update_or_create(
@@ -369,19 +370,39 @@ def buscar_manifesto_completo_task(self, log_id):
                             'endereco_entrega': endereco,
                             'tipo_operacao': tipo_operacao,
                             'status': status_final,
-                            'freight_id_tms': str(freight_id) if freight_id else None # ARMAZENA O ID DO FRETE
+                            'freight_id_tms': str(freight_id) if freight_id else None
                         }
                     )
                 
+                # --- MINUTAS / ORDENS SEM CHAVE ---
+                else:
+                    # Mantendo mesma lógica de última ocorrência pelo dicionário
+                    nota_no_manifesto = NotaFiscal.objects.filter(
+                        manifesto=manifesto_obj,
+                        numero_nota=str(numero),
+                        chave_acesso__isnull=True
+                    ).first()
+                    
+                    status_final = nota_no_manifesto.status if nota_no_manifesto else 'PENDENTE'
+
+                    NotaFiscal.objects.update_or_create(
+                        manifesto=manifesto_obj,
+                        numero_nota=str(numero),
+                        chave_acesso=None,
+                        defaults={
+                            'destinatario': destinatario,
+                            'endereco_entrega': endereco,
+                            'tipo_operacao': tipo_operacao,
+                            'status': status_final,
+                            'freight_id_tms': str(freight_id) if freight_id else None
+                        }
+                    )
+
                 total_processadas += 1
-                # eNVIA ATUALIZACAO PARA TASKS DE BAIXA E PARA O PAINEL A CADA ITEM PROCESSADO
-                if total_processadas % 5 == 0:
-                    enviar_painel(manifesto_obj)
-                
+
             except Exception as e:
                 logger.warning(f"⚠️ Erro no documento {id_doc}: {e}")
                 continue
-
         log.status = 'PROCESSADO'
         log.save()
         # 🔔 Atualiza o painel somente depois que tudo foi salvo

@@ -68,6 +68,13 @@ CHANNEL_LAYERS = {
         },
     },
 }
+# Configurações do Web Push
+WEBPUSH_SETTINGS = {
+    "VAPID_PUBLIC_KEY": "BDBRd8eEkZHd6ZY_j3W4kaDZVuLr0MmrMqXJSox83EHT_re79BA01ViC3RzOy0P7J6UYcqOmhIyLqHJzdVUo8DQ",
+    "VAPID_PRIVATE_KEY": "IQhIJ9Q3ROfee2OfX11f5Rz-9lE_1AYA3TebZwDMEGI",
+    "VAPID_ADMIN_EMAIL": "legalhints@gmail.com"
+}
+
 
 # (Deve ser a URL da sua página HTML de login)
 LOGIN_URL = '/app/login/'
@@ -130,8 +137,8 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        #'NAME': 'st63136_dev_app_transportadora',
-        'NAME': 'st63136_entregas_quickdelivery',
+        'NAME': 'st63136_dev_app_transportadora',
+        #'NAME': 'st63136_entregas_quickdelivery',
         'USER': 'st63136_quickdelivery',
         'PASSWORD': 'Qu1ck.2026',
         'HOST': 'st63136.ispot.cc',  # 👈 DEVE SER O DOMÍNIO OU IP DA INTERSERVER

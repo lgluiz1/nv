@@ -47,57 +47,31 @@ self.addEventListener('fetch', (event) => {
     );
 });
 
-
 // --- LÓGICA DE NOTIFICAÇÕES (PUSH) ---
 
 self.addEventListener('push', function (event) {
-    let data = {};
-
-    // Evita erro se vier push sem payload
     if (event.data) {
-        data = event.data.json();
+        const data = event.data.json();
+        const options = {
+            body: data.body,
+            icon: data.icon || '/static/images/icon-160x160.png',
+            badge: '/static/images/icon-160x160.png', // Ícone pequeno que aparece na barra de status
+            vibrate: [200, 100, 200],
+            data: {
+                url: data.url || '/app/' // URL para onde o motorista vai ao clicar
+            }
+        };
+
+        event.waitUntil(
+            self.registration.showNotification(data.title, options)
+        );
     }
-
-    const options = {
-        body: data.body || 'Você tem uma nova atualização',
-        icon: data.icon || '/static/images/icon-160x160.png',
-        badge: '/static/images/icon-160x160.png',
-        vibrate: [200, 100, 200],
-        data: {
-            url: data.url || '/app/'
-        },
-        requireInteraction: true // notificação fica até o usuário interagir
-    };
-
-    event.waitUntil(
-        self.registration.showNotification(
-            data.title || 'Transportadora App',
-            options
-        )
-    );
 });
 
-
-// --- Clique na notificação ---
-
+// Ação ao clicar na notificação: Abre o app na página certa
 self.addEventListener('notificationclick', function (event) {
     event.notification.close();
-
-    const urlToOpen = event.notification.data.url || '/app/';
-
     event.waitUntil(
-        clients.matchAll({ type: 'window', includeUncontrolled: true })
-            .then(function (clientList) {
-                // Se já tiver o app aberto, foca nele
-                for (let client of clientList) {
-                    if (client.url.includes('/app/') && 'focus' in client) {
-                        return client.focus();
-                    }
-                }
-                // Se não estiver aberto, abre uma nova aba
-                if (clients.openWindow) {
-                    return clients.openWindow(urlToOpen);
-                }
-            })
+        clients.openWindow(event.notification.data.url)
     );
 });

@@ -72,6 +72,7 @@ def save_user_profile(sender, instance, **kwargs):
 # Criaçao modelo de filial
 class Filial(models.Model):
     nome = models.CharField(max_length=100)
+    id_filial_tms = models.CharField(max_length=50, blank=True, null=True)
 
     def __str__(self):
         return self.nome
