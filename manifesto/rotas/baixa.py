@@ -48,6 +48,11 @@ class RegistrarBaixaView(APIView):
         foto_arquivo = request.FILES.get('foto')
         numero_mft = request.data.get('manifest_id') 
         
+        # --- NOVOS DADOS DA MODIFICAÇÃO ---
+        # O JS envia nota_retida como string 'true' ou 'false'
+        is_retida = request.data.get('nota_retida') == 'true'
+        observacao_app = request.data.get('observacao_retida', '')
+        
         try:
             with transaction.atomic():
                 # --- BUSCA INTELIGENTE (HÍBRIDA) ---
@@ -71,9 +76,9 @@ class RegistrarBaixaView(APIView):
 
                 ocorrencia = Ocorrencia.objects.get(codigo_tms=codigo_tms) 
 
-                # --- LÓGICA DE UPLOAD ---
+                # --- LÓGICA DE UPLOAD (SÓ SE NÃO FOR NOTA RETIDA) ---
                 url_final_foto = None
-                if foto_arquivo:
+                if not is_retida and foto_arquivo:
                     # Nome único para evitar sobreposição (ID da nota + identificador visual)
                     id_foto = chave_acesso if nf.chave_acesso else f"minuta_{nf.numero_nota}"
                     nome_arquivo = f"{nf.id}_{id_foto}.jpg"
@@ -86,10 +91,10 @@ class RegistrarBaixaView(APIView):
                         'tipo': 'ENTREGA' if ocorrencia.tipo == 'ENTREGA' else 'OCORRENCIA',
                         'ocorrencia': ocorrencia,
                         'comprovante_foto_url': url_final_foto, 
-                        'recebedor': request.data.get('recebedor'),
+                        'recebedor': request.data.get('recebedor') if not is_retida else "NÃO INFORMADO",
                         'latitude': request.data.get('latitude'),
                         'longitude': request.data.get('longitude'),
-                        'observacao': request.data.get('observacao'),
+                        'observacao': observacao_app if is_retida else request.data.get('observacao', '')
                     }
                 )
 
@@ -106,7 +111,7 @@ class RegistrarBaixaView(APIView):
                     enviar_baixa_minuta_task.delay(baixa.id)
                     msg_log = "Minuta enviada para Task de Fretes."
                 
-                print(f"BAIXA REGISTRADA: {msg_log}")
+                print(f"BAIXA REGISTRADA: {msg_log} (Retida: {is_retida})")
 
             return Response({'status': 'sucesso', 'mensagem': 'Baixa registrada e integração iniciada!'})
 

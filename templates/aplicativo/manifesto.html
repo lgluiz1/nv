@@ -256,73 +256,91 @@
 
 <div class="modal fade" id="modalBaixa" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title" id="modal-titulo-nf" class="text-truncate">Registro Ocorrência</h5>
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 15px;">
+            <div class="modal-header bg-primary text-white" style="border-radius: 15px 15px 0 0;">
+                <h5 class="modal-title fw-bold" id="modal-titulo-nf">Registro Ocorrência</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
+            
+            <div class="modal-body p-4">
                 <input type="hidden" id="hidden-chave-nf">
                 <input type="hidden" id="hidden-numero-nf">
                 
                 <div class="mb-3">
-    <label class="form-label fw-bold">Selecione a Ocorrência:</label>
-    <select class="form-select" id="select-ocorrencia">
-        
-        <optgroup label="ENTREGA (Obrigatório Foto)">
-            {% for oc in sucesso %}
-                <option value="{{ oc.codigo_tms }}">{{ oc.codigo_tms }} - {{ oc.descricao }}</option>
-            {% endfor %}
-        </optgroup>
-
-        <optgroup label="NÃO ENTREGA (Foto Opcional)">
-            {% for oc in problemas %}
-                <option value="{{ oc.codigo_tms }}">{{ oc.codigo_tms }} - {{ oc.descricao }}</option>
-            {% endfor %}
-        </optgroup>
-        <optgroup label="DESPACHO E REDESPACHO (Foto Opcional)">
-            {% for oc in cia %}
-                <option value="{{ oc.codigo_tms }}">{{ oc.codigo_tms }} - {{ oc.descricao }}</option>
-            {% endfor %}
-        </optgroup>
-        
-    </select>
-</div>
-
-                <div class="mb-3" id="campo-recebedor">
-                    <label class="form-label fw-bold">Nome do Recebedor:</label>
-                    <input type="text" class="form-control" id="input-recebedor" placeholder="Quem recebeu?">
+                    <label class="form-label fw-bold"><i class="bi bi-list-check"></i> Selecione a Ocorrência:</label>
+                    <select class="form-select form-select-lg" id="select-ocorrencia">
+                        <optgroup label="ENTREGA (Obrigatório Foto)">
+                            {% for oc in sucesso %}
+                                <option value="{{ oc.codigo_tms }}">{{ oc.codigo_tms }} - {{ oc.descricao }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="NÃO ENTREGA (Foto Opcional)">
+                            {% for oc in problemas %}
+                                <option value="{{ oc.codigo_tms }}">{{ oc.codigo_tms }} - {{ oc.descricao }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="DESPACHO E REDESPACHO (Foto Opcional)">
+                            {% for oc in cia %}
+                                <option value="{{ oc.codigo_tms }}">{{ oc.codigo_tms }} - {{ oc.descricao }}</option>
+                            {% endfor %}
+                        </optgroup>
+                    </select>
                 </div>
 
-                <div class="camera-container border rounded bg-light text-center p-2 mb-3" style="min-height: 200px; position: relative;">
+                <div class="mb-3" id="campo-recebedor">
+                    <label class="form-label fw-bold"><i class="bi bi-person-fill"></i> Nome do Recebedor:</label>
+                    <input type="text" class="form-control form-control-lg" id="input-recebedor" placeholder="Quem recebeu a mercadoria?">
+                </div>
+
+                <hr>
+
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="check-nota-retida" style="cursor: pointer; width: 3em; height: 1.5em;">
+                    <label class="form-check-label fw-bold text-danger ms-2" for="check-nota-retida">
+                        ⚠️ Nota Fiscal Retida ⚠️
+                    </label>
+                </div>
+
+                <div id="campo-observacao" class="mb-3" style="display: none;">
+                    <label class="form-label fw-bold text-primary">Motivo da Retenção (Obrigatório):</label>
+                    <textarea class="form-control" id="input-observacao" rows="3" placeholder="Ex: Nota ficou no setor de faturamento com o Sr. Marcos."></textarea>
+                </div>
+
+                <div class="camera-container border rounded bg-light text-center p-3 mb-3" style="min-height: 120px; border-style: dashed !important;">
+                    <canvas id="canvas-preview" style="display: none;"></canvas>
                     
-                    <canvas id="canvas-preview" style="width: 100%; display: none; border-radius: 8px;"></canvas>
-                    
-                    <div id="placeholder-camera" class="py-5">
-                        <i class="bi bi-camera" style="font-size: 3rem; color: #ccc;"></i>
-                        <p class="text-muted">A foto será exibida aqui</p>
+                    <div id="placeholder-camera" class="d-flex flex-column align-items-center justify-content-center">
+                        <div id="wrapper-icone" class="rounded-circle bg-white shadow-sm d-flex align-items-center justify-content-center mb-2" style="width: 60px; height: 60px;">
+                            <i id="icone-camera" class="bi bi-camera text-secondary" style="font-size: 1.8rem;"></i>
+                        </div>
+                        <p id="texto-status-foto" class="text-muted small fw-bold mb-0">Nenhuma foto capturada</p>
                     </div>
                 </div>
 
                 <div class="d-grid gap-2">
-    <label for="camera-nativa" class="btn btn-outline-secondary" id="label-camera">
-        <i class="bi bi-camera-fill"></i> Abrir Câmera
-    </label>
-    
-    <input type="file" id="camera-nativa" accept="image/*" capture="camera" style="display: none;">
+                    <label for="camera-nativa" class="btn btn-dark btn-lg shadow-sm" id="label-camera">
+                        <i class="bi bi-camera-fill me-2"></i> Abrir Câmera
+                    </label>
+                    
+                    <input type="file" id="camera-nativa" accept="image/*" capture="camera" style="display: none;">
 
-    <label for="camera-nativa" class="btn btn-warning" id="btn-nova-foto" style="display: none;">
-        Tirar outra foto
-    </label>
-</div>
+                    <label for="camera-nativa" class="btn btn-warning btn-lg shadow-sm" id="btn-nova-foto" style="display: none;">
+                        <i class="bi bi-arrow-clockwise me-2"></i> Tirar outra foto
+                    </label>
+                </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-success" onclick="salvarRegistro()">Confirmar Registro</button>
+
+            <div class="modal-footer bg-light" style="border-radius: 0 0 15px 15px;">
+                <button type="button" class="btn btn-link text-muted fw-bold text-decoration-none" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success btn-lg px-4 fw-bold shadow-sm" onclick="salvarRegistro()">
+                    Confirmar Registro <i class="bi bi-check-lg ms-1"></i>
+                </button>
             </div>
         </div>
     </div>
 </div>
+
+
 <div class="modal fade" id="modalDetalhes" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -667,7 +685,7 @@ function fecharModal() {
 </script>
 <script src="{% static 'js/serviceworker.js' %}?v=1.3"></script> 
     <script src="/static/js/login_motorista/authFetch.js"></script>
-    <script src="{% static 'js/manifesto_v13.js' %}"></script>
+    <script src="{% static 'js/manifesto_v14.js' %}"></script>
     <script src="{% static 'js/historico_v1.js' %}"></script>
 
 </body>

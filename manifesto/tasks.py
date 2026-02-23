@@ -448,7 +448,6 @@ def enviar_baixa_esl_task(self, baixa_id):
     from datetime import timezone as dt_timezone
     import requests
     import json
-    from datetime import timezone as dt_timezone
     import pytz
 
     TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
@@ -470,8 +469,6 @@ def enviar_baixa_esl_task(self, baixa_id):
         codigo_ocorrencia = int(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else 1
 
         # ID Interno do TMS que você salvou na busca
-        # Certifique-se que o nome do campo no seu model é 'numero_manifesto' 
-        # ou o campo onde você guardou o ID de 6 dígitos da ESL (ex: 296803)
         tms_manifest_id = manifesto.numero_manifesto 
         
         # 1. Pega a timezone de Brasília
@@ -483,7 +480,7 @@ def enviar_baixa_esl_task(self, baixa_id):
         # 3. Formata exatamente como a ESL pede (YYYY-MM-DDTHH:MM:SS.000-03:00)
         data_ocorrencia_str = data_br.strftime('%Y-%m-%dT%H:%M:%S.000-03:00')
 
-        # Lógica de fotos (Invoice vs Freight)
+        # --- LÓGICA DE FOTOS (Invoice vs Freight) - MANTIDA ORIGINAL ---
         if codigo_ocorrencia in [1, 2]:
             invoice_data = {
                 "key": nf.chave_acesso,
@@ -499,12 +496,17 @@ def enviar_baixa_esl_task(self, baixa_id):
                 "delivery_receipt_url": url_foto
             } if url_foto else {}
 
+        # --- NOVA INFORMAÇÃO: COMENTÁRIO COM OBSERVAÇÃO ---
+        # Verificamos se é nota retida (sem foto em entrega) para avisar no comentário
+        prefixo_retida = "[NOTA RETIDA] " if not url_foto and codigo_ocorrencia in [1, 2] else ""
+        comentario_final = f"{prefixo_retida}Baixa via App - Motorista: {motorista}. Obs: {baixa.observacao or ''}"
+
         # Montagem do Payload conforme a documentação enviada
         payload = {
             "invoice_occurrence": {
                 "receiver": baixa.recebedor or "Nao identificado",
                 "document_number": baixa.documento_recebedor or "",
-                "comments": f"Baixa via App - Motorista: {motorista}. Obs: {baixa.observacao or ''}",
+                "comments": comentario_final, # 👈 Atualizado com a nova lógica
                 "occurrence_at": data_ocorrencia_str,
                 "occurrence": {
                     "code": codigo_ocorrencia
@@ -516,7 +518,7 @@ def enviar_baixa_esl_task(self, baixa_id):
             }
         }
 
-        # Se houver dados de frete/cte, insere no payload
+        # Se houver dados de frete/cte, insere no payload (MANTIDO ORIGINAL)
         if freight_data:
             payload["invoice_occurrence"]["freight"] = freight_data
 
@@ -559,6 +561,7 @@ def enviar_baixa_esl_task(self, baixa_id):
 
         # Se for erro de validação (como ID de manifesto inexistente ou chave inválida)
         if status and 400 <= status < 500:
+            # Assumindo que você tenha essa task de e-mail, se não, pode comentar
             enviar_email_erro_tms_task.delay(baixa_id, msg_erro)
             return f"Erro de validação ESL: {msg_erro}"
 
@@ -573,8 +576,6 @@ def enviar_baixa_esl_task(self, baixa_id):
         baixa.log_erro_tms = msg[:500]
         baixa.save()
         raise self.retry(exc=e, countdown=60)
-
-
 
 @shared_task(bind=True, max_retries=5)
 def finalizar_manifesto_tms_task(self, manifesto_id):
