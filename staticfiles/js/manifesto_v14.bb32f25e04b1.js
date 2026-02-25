@@ -621,16 +621,18 @@ function renderSearchScreen(message = null, type = 'info') {
 }
 
 // =====================================================
-// VERIFICAÇÃO DE ESTADO INICIAL (MANIFESTO ATIVO) - COMPLETA
+// VERIFICAÇÃO DE ESTADO INICIAL (MANIFESTO ATIVO) - OTIMIZADO
 // =====================================================
 async function verificarEstadoInicial() {
-    const content = document.getElementById('app-content');
+    // 1. Tenta recuperar o que já temos salvo no celular
     const mID_salvo = localStorage.getItem('manifesto_ativo');
     
-    // 1. CARREGAMENTO INSTANTÂNEO (UX Otimista)
+    // 2. CARREGAMENTO INSTANTÂNEO (UX Otimista)
     if (mID_salvo) {
-        console.log("⚡ Iniciando com dados locais...");
+        console.log("⚡ Iniciando com dados locais para velocidade máxima...");
         manifestoAtual = mID_salvo;
+        
+        // Renderiza a estrutura básica e tenta injetar o HTML das notas que salvamos antes
         renderListaEntregasFinal(mID_salvo);
         
         const cache = localStorage.getItem(`cache_notas_${mID_salvo}`);
@@ -638,46 +640,38 @@ async function verificarEstadoInicial() {
             const areaDinamica = document.getElementById('area-lista-dinamica');
             if (areaDinamica) {
                 areaDinamica.innerHTML = JSON.parse(cache).html;
+                console.log("✅ Notas carregadas do cache em 0.1s");
             }
-        }
-    } else {
-        // 2. SE NÃO TEM CACHE, LIMPA O INPUT E MOSTRA O SKELETON (NOVO)
-        // Substituímos o spinner antigo pelo Skeleton para uma sensação melhor
-        if (content) {
-            mostrarSkeletonLoading(); 
         }
     }
 
-    // 3. VERIFICAÇÃO EM SEGUNDO PLANO
+    // 3. VERIFICAÇÃO EM SEGUNDO PLANO (Background Check)
     try {
         const response = await authFetch(`${API_BASE}manifesto/verificar-ativo/`);
         
-        if (!response || !response.ok) {
-             if (!mID_salvo) renderSearchScreen(); // Se falhou e não tem nada, mostra busca
-             return;
-        }
-        
+        if (!response || !response.ok) return;
         const data = await response.json();
         
         if (data.tem_manifesto) {
+            // Se o manifesto mudou ou é novo
             manifestoAtual = data.numero_manifesto;
             localStorage.setItem('manifesto_ativo', data.numero_manifesto);
-
-            // Se a tela de loading estava ativa, a renderListaEntregasFinal vai montar a estrutura
-            if (!mID_salvo) renderListaEntregasFinal(data.numero_manifesto);
 
             const el = document.getElementById('manifesto-id-display');
             if (el) el.innerText = data.numero_manifesto;
 
+            // Atualiza a lista com dados frescos do servidor sem travar a tela
             atualizarListaViva(data.numero_manifesto);
         } else {
-            console.log("ℹ️ Nenhum manifesto ativo.");
+            // Se o servidor disser que não há mais manifesto, limpa tudo
+            console.log("ℹ️ Nenhum manifesto ativo no servidor.");
             localStorage.removeItem('manifesto_ativo');
             if(mID_salvo) localStorage.removeItem(`cache_notas_${mID_salvo}`);
-            renderSearchScreen(); // Agora sim, aqui ele mostra o input de busca
+            renderSearchScreen();
         }
     } catch (err) { 
-        console.warn("📡 Falha na verificação de status.");
+        // Se o banco de dados der erro ou a net cair, o motorista continua vendo o cache
+        console.warn("📡 Falha na verificação de status. Mantendo modo offline.");
         if (!mID_salvo) renderSearchScreen(); 
     }
 }
@@ -1609,37 +1603,6 @@ async function confirmarTransferenciaIndividual(numeroNota, chave) {
         executarBaixaOp(chave, 'TRANSFERENCIA', true);
     }
 }
-
-// =====================================================
-// LOADING NOVO CARREGAMENTO
-// =====================================================
-function mostrarSkeletonLoading() {
-    const content = document.getElementById('app-content');
-    if (!content) return;
-
-    // A mesma estrutura do HTML acima
-    const cardNF = `
-        <div class="skeleton-card-nf">
-            <div class="d-flex justify-content-between mb-3">
-                <div class="skeleton-line shimmer-effect" style="width: 40%; height: 18px;"></div>
-                <div class="skeleton-line shimmer-effect" style="width: 25px; height: 25px; border-radius: 50%;"></div>
-            </div>
-            <div class="skeleton-line shimmer-effect" style="width: 85%; height: 12px;"></div>
-            <div class="skeleton-line shimmer-effect" style="width: 65%; height: 12px;"></div>
-            <div class="skeleton-line shimmer-effect w-100" style="height: 38px; margin-top: 12px; border-radius: 8px;"></div>
-        </div>
-    `;
-
-    content.innerHTML = `
-        <div class="p-3 animate__animated animate__fadeIn">
-            <div class="shimmer-effect mb-4" style="height: 55px; width: 100%; border-radius: 15px;"></div>
-            <div class="shimmer-effect mb-3" style="height: 25px; width: 140px; border-radius: 5px;"></div>
-            ${cardNF}
-            ${cardNF}
-        </div>
-    `;
-}
-// =====================================================
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         atualizarIconeNuvem();
@@ -1647,8 +1610,6 @@ document.addEventListener('DOMContentLoaded', () => {
         sincronizarBaixasPendentes(); 
     }, 1500); 
 });
-
-
 
 // 1. Escuta quando o navegador avisa que a internet VOLTOU
 window.addEventListener('online', () => {
@@ -1672,5 +1633,3 @@ setInterval(() => {
         sincronizarBaixasPendentes();
     }
 }, 5 * 60 * 1000); // 5 minutos em milissegundos
-
-

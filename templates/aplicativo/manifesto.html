@@ -18,6 +18,67 @@
         .card-nf { border-left: 3px solid #0d6efd; margin-top: 15px; }
         .header-status { background-color: #dc3545; color: white; padding: 10px; border-radius: 5px 5px 0 0; }
         .loading-animation { width: 50px; height: 50px; }
+        .card-sincronizando {
+    border-left: 5px solid #ffc107 !important; /* Amarelo de atenção */
+    opacity: 0.8;
+    pointer-events: none; /* Evita que o motorista clique de novo enquanto sobe */
+}
+
+.badge-sync {
+    background-color: #fff3cd;
+    color: #856404;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid #ffeeba;
+}
+/* Container do Card Esqueleto - Mantendo sua borda lateral padrão */
+.skeleton-card-nf {
+    height: 145px;
+    background: white;
+    border-radius: 12px;
+    margin-bottom: 15px;
+    padding: 15px;
+    border-left: 5px solid #e9ecef; /* Cinza claro simulando a borda lateral */
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Linhas de texto fakes */
+.skeleton-line {
+    background: #eff1f3;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+/* O brilho (shimmer) que corre a tela */
+.shimmer-effect {
+    position: relative;
+    overflow: hidden;
+    background-color: #e2e5e7;
+}
+
+.shimmer-effect::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0) 0,
+        rgba(255, 255, 255, 0.4) 50%,
+        rgba(255, 255, 255, 0) 100%
+    );
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    100% { transform: translateX(100%); }
+}
     </style>
 </head>
 <body>
@@ -42,10 +103,11 @@
         <div class="d-flex align-items-center gap-3">
 
             <!-- STATUS -->
-            <div class="status-indicator d-none d-sm-flex">
-                <span class="status-dot"></span>
-                <span class="status-text">Online</span>
-            </div>
+            <div id="status-sincronizacao" class="d-flex align-items-center ms-2">
+    <div id="nuvem-status">
+        <i class="bi bi-cloud-check-fill text-success" style="font-size: 1.5rem;" title="Tudo sincronizado"></i>
+    </div>
+</div>
 
             <!-- USUÁRIO -->
             <div class="dropdown">
@@ -118,30 +180,32 @@
 </div>
     <div class="container d-flex flex-column min-vh-100 justify-content-center ">
     <div id="app-content">
-        <div class="text-center my-5">
-            <div class="spinner-border text-primary" role="status" id="loadingSpinner">
-                <span class="visually-hidden">Carregando...</span>
+    <div class="p-3 animate__animated animate__fadeIn">
+        <div class="shimmer-effect mb-4" style="height: 55px; width: 100%; border-radius: 15px;"></div>
+        
+        <div class="shimmer-effect mb-3" style="height: 25px; width: 140px; border-radius: 5px;"></div>
+        
+        <div class="skeleton-card-nf">
+            <div class="d-flex justify-content-between mb-3">
+                <div class="skeleton-line shimmer-effect" style="width: 40%; height: 18px;"></div>
+                <div class="skeleton-line shimmer-effect" style="width: 25px; height: 25px; border-radius: 50%;"></div>
             </div>
-            <p class="mt-2" id="loadingMessage">Verificando status...</p>
+            <div class="skeleton-line shimmer-effect" style="width: 85%; height: 12px;"></div>
+            <div class="skeleton-line shimmer-effect" style="width: 65%; height: 12px;"></div>
+            <div class="skeleton-line shimmer-effect w-100" style="height: 38px; margin-top: 12px; border-radius: 8px;"></div>
         </div>
 
-        <div class="mt-5">
-            <form id="search-form">
-              <input
-    type="text"
-    id="manifesto-number"
-    class="form-control"
-    placeholder="Número do Manifesto"
-    required
-    inputmode="numeric"
-    pattern="[0-9]*"
-    oninput="this.value = this.value.replace(/\D/g, '')"
-/>
-
-                <button type="submit" class="btn btn-primary mt-3">Buscar Manifesto</button>
-            </form>
+        <div class="skeleton-card-nf">
+            <div class="d-flex justify-content-between mb-3">
+                <div class="skeleton-line shimmer-effect" style="width: 40%; height: 18px;"></div>
+                <div class="skeleton-line shimmer-effect" style="width: 25px; height: 25px; border-radius: 50%;"></div>
+            </div>
+            <div class="skeleton-line shimmer-effect" style="width: 85%; height: 12px;"></div>
+            <div class="skeleton-line shimmer-effect" style="width: 65%; height: 12px;"></div>
+            <div class="skeleton-line shimmer-effect w-100" style="height: 38px; margin-top: 12px; border-radius: 8px;"></div>
         </div>
     </div>
+</div>
 
     <div class="fixed-bottom p-3 bg-light border-top d-flex justify-content-between">
         <button class="btn btn-sm btn-outline-danger" onclick="logout()">Sair do App</button>

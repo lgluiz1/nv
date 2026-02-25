@@ -1617,7 +1617,7 @@ function mostrarSkeletonLoading() {
     const content = document.getElementById('app-content');
     if (!content) return;
 
-    // A mesma estrutura do HTML acima
+    // Estrutura de um card NF fake
     const cardNF = `
         <div class="skeleton-card-nf">
             <div class="d-flex justify-content-between mb-3">
@@ -1633,7 +1633,15 @@ function mostrarSkeletonLoading() {
     content.innerHTML = `
         <div class="p-3 animate__animated animate__fadeIn">
             <div class="shimmer-effect mb-4" style="height: 55px; width: 100%; border-radius: 15px;"></div>
+            
+            <div class="d-flex gap-2 mb-4">
+                <div class="shimmer-effect" style="height: 30px; width: 100px; border-radius: 20px;"></div>
+                <div class="shimmer-effect" style="height: 30px; width: 80px; border-radius: 20px;"></div>
+            </div>
+            
             <div class="shimmer-effect mb-3" style="height: 25px; width: 140px; border-radius: 5px;"></div>
+            
+            ${cardNF}
             ${cardNF}
             ${cardNF}
         </div>

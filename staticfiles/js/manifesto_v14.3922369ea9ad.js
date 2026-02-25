@@ -2,9 +2,6 @@
 // =====================================================
 // CONFIGURAÇÕES E ESTADO GLOBAL
 // =====================================================
-const DB_NAME = 'FrotaDB';
-const DB_VERSION = 1;
-
 const ENDPOINTS = {
     busca: `${API_BASE}manifesto/busca/`,
     status: `${API_BASE}manifesto/status/`,
@@ -16,108 +13,13 @@ let pollingInterval = null;
 let manifestoAtual = null;
 let jaMudouDeTela = false;
 
-function abrirDB() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
-        request.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            // Loja para guardar as notas baixadas pendentes
-            if (!db.objectStoreNames.contains('baixas_pendentes')) {
-                db.createObjectStore('baixas_pendentes', { keyPath: 'id', autoIncrement: true });
-            }
-        };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
-}
 const TEMA_OPERACAO = {
     'TRANSFERENCIA': { icon: 'bi-box-arrow-right', color: 'primary', label: 'Registrar Chegada', code: '98' },
     'DESPACHO':      { icon: 'bi-airplane', color: 'info', label: 'Confirmar Despacho', code: '50' },
     'RETIRADA':      { icon: 'bi-box-arrow-in-left', color: 'warning', label: 'Confirmar Retirada', code: '51' },
     'ENTREGA':       { icon: 'bi-truck', color: 'primary', label: 'Dar Baixa', code: '1' }
 };
-// =====================================================
-// SINCRONIZAÇÃO AUTOMÁTICA (VIGIA)
-// =====================================================
-async function sincronizarBaixasPendentes() {
-    const db = await abrirDB();
-    const transaction = db.transaction('baixas_pendentes', 'readonly');
-    const store = transaction.objectStore('baixas_pendentes');
-    
-    const pendentes = await new Promise(res => {
-        const req = store.getAll();
-        req.onsuccess = () => res(req.result);
-    });
 
-    if (pendentes.length === 0) {
-        atualizarIconeNuvem(); // Garante que fica verde se estiver vazio
-        return;
-    }
-
-    console.log(`🔄 Tentando sincronizar ${pendentes.length} notas...`);
-
-    for (const item of pendentes) {
-        const formData = new FormData();
-        
-        // Reconstrói exatamente o que o Django espera
-        for (const key in item.campos) {
-            // Se o valor for null ou undefined, enviamos "0.00" para evitar o erro 400 de decimal
-            let valor = item.campos[key];
-            if ((key === 'latitude' || key === 'longitude') && (valor === null || valor === undefined)) {
-                valor = "0.000000";
-            }
-            formData.append(key, valor || '');
-        }
-        
-        formData.append('chave_acesso', item.chaveNF);
-        formData.append('numero_nota', item.numeroNF);
-        formData.append('manifesto_id', item.mID);
-        
-        if (item.foto) {
-            formData.append('foto', item.foto, `mft_${item.mID}_${item.chaveNF}.jpg`);
-        }
-
-        try {
-            const response = await authFetch(`${API_BASE}manifesto/registrar-baixa/`, {
-                method: 'POST',
-                body: formData 
-            });
-
-            if (response.ok) {
-                // SUCESSO: Remove do IndexedDB
-                const delTrans = db.transaction('baixas_pendentes', 'readwrite');
-                await delTrans.objectStore('baixas_pendentes').delete(item.id);
-                console.log(`✅ Nota ${item.numeroNF} sincronizada!`);
-                await atualizarIconeNuvem();
-            } 
-            else if (response.status === 400) {
-                // ERRO DE DADOS (Bad Request): 
-                // Provavelmente o erro de "null" ou campos faltando. 
-                // Removemos para não travar o loop, pois o servidor nunca aceitará esse dado como está.
-                console.error(`❌ Erro 400 na nota ${item.numeroNF}: Dados rejeitados pelo servidor.`);
-                const delTrans = db.transaction('baixas_pendentes', 'readwrite');
-                await delTrans.objectStore('baixas_pendentes').delete(item.id);
-            } 
-            else {
-                // ERRO 500 ou outros: Servidor caiu ou banco fora. 
-                // Mantemos no DB para tentar na próxima sincronização.
-                console.warn(`⚠️ Servidor respondeu ${response.status} para nota ${item.numeroNF}. Mantendo na fila.`);
-            }
-        } catch (err) {
-            // FALHA DE CONEXÃO: Internet caiu no meio do processo.
-            console.warn("📡 Falha de rede durante a sincronização. Parando ciclo.");
-            break; // Sai do loop para economizar processamento, tenta quando a rede estabilizar
-        }
-    }
-    
-    // Atualiza a nuvem no final do processo
-    await atualizarIconeNuvem();
-}
-
-// Chame a atualização da nuvem assim que salvar no catch do salvarRegistro
-// catch (err) { ... store.add(objOffline); atualizarIconeNuvem(); ... }
-
-window.addEventListener('online', sincronizarBaixasPendentes);
 // =====================================================
 // INICIALIZAÇÃO (INIT)
 // =====================================================
@@ -271,11 +173,6 @@ async function handleManifestoSearch(event) {
     }
 }
 
-
-// Tenta sincronizar toda vez que o app detecta que a internet voltou
-window.addEventListener('online', sincronizarBaixasPendentes);
-
-//
 function startPolling() {
     stopPolling();
     jaMudouDeTela = false;
@@ -332,54 +229,29 @@ function startPolling() {
 // RENDERIZAÇÃO DINÂMICA (INCREMENTAL)
 // =====================================================
 
-async function renderEstruturaLista(numeroManifesto) {
+function renderEstruturaLista(numeroManifesto) {
     const content = document.getElementById('app-content');
     if (!content) return;
 
-    // 1. Tenta pegar as notas que já estavam no cache para mostrar IMEDIATAMENTE
-    const notasCache = localStorage.getItem(`cache_notas_${numeroManifesto}`);
-    
     content.innerHTML = `
         <div class="container pb-5 animate__animated animate__fadeIn">
             <div class="text-center mb-4">
                 <h5 class="fw-bold text-secondary mb-1">Manifesto #${numeroManifesto}</h5>
                 <div id="progresso-container" class="mt-2">
-                    <span id="contador-notas" class="badge bg-primary px-3 py-2">Sincronizando...</span>
+                    <span id="contador-notas" class="badge bg-primary px-3 py-2">Sincronizando com ESL...</span>
                 </div>
             </div>
 
             <div id="area-lista-dinamica">
-                ${notasCache ? '' : `
-                    <div class="skeleton-card"></div>
-                    <div class="skeleton-card"></div>
-                `}
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary mb-3" role="status"></div>
+                    <p class="text-muted">Preparando sua rota...</p>
+                </div>
             </div>
         </div>
     `;
-
-    // Se tem cache, já renderiza ele enquanto o servidor não responde
-    if (notasCache) {
-        document.getElementById('area-lista-dinamica').innerHTML = JSON.parse(notasCache).html;
-    }
-
-    // 2. Dispara as consultas ao servidor em PARALELO (Muito mais rápido)
-    // Em vez de esperar o status para depois buscar notas, faz os dois de uma vez
-    Promise.all([
-        authFetch(`${API_BASE}manifesto/status/?numero_manifesto=${numeroManifesto}`),
-        atualizarListaViva(numeroManifesto) 
-    ]).then(async ([resStatus]) => {
-        const statusData = await resStatus.json();
-        // Se o status disser que encerrou, aí sim a gente limpa a tela
-        if (statusData.status === 'FINALIZADO') {
-            localStorage.removeItem(`cache_notas_${numeroManifesto}`);
-            window.location.reload();
-        }
-    });
+    atualizarListaViva(numeroManifesto);
 }
-
-// =====================================================
-// FLUXO DE BUSCA E MONITORAMENTO (POLLING VIVO)
-// =====================================================
 async function atualizarListaViva(numeroManifesto) {
     try {
         const response = await authFetch(`${API_BASE}manifesto/notas/?numero_manifesto=${numeroManifesto}`);
@@ -388,75 +260,33 @@ async function atualizarListaViva(numeroManifesto) {
         const notas = await response.json();
         const areaDinamica = document.getElementById('area-lista-dinamica');
         const contador = document.getElementById('contador-notas');
-
-        // 1. BUSCA NOTAS NO LIMBO (INDEXEDDB)
-        const db = await abrirDB();
-        const transPendentes = db.transaction('baixas_pendentes', 'readonly');
-        const storePendentes = transPendentes.objectStore('baixas_pendentes');
-        const notasNoLimbo = await new Promise(res => {
-            const req = storePendentes.getAll();
-            req.onsuccess = () => res(req.result.map(n => n.chaveNF)); 
-        });
-
-        // --- 2. LOGICA DA SINCRONIZAÇÃO (FEEDBACK VISUAL) ---
-        if (contador) {
-            contador.innerHTML = `<span class="badge bg-primary px-4 py-2 animate__animated animate__fadeIn">Sincronizando...</span>`;
-        }
-
-        // --- 3. ANÁLISE DE MUDANÇA (SILENT REFRESH) ---
-        const cacheDadosRaw = localStorage.getItem(`cache_dados_puros_${numeroManifesto}`);
-        const novosDadosJSON = JSON.stringify(notas);
-
-        // VARIÁVEIS DE APOIO PARA OS GRUPOS E CONTADORES
-        const TEMA_OPERACAO = {
-            'TRANSFERENCIA': { icon: 'bi-box-arrow-right', color: 'primary', label: 'Registrar Chegada', code: '98' },
-            'DESPACHO':      { icon: 'bi-airplane', color: 'info', label: 'Confirmar Despacho', code: '50' },
-            'RETIRADA':      { icon: 'bi-box-arrow-in-left', color: 'warning', label: 'Confirmar Retirada', code: '51' },
-            'ENTREGA':       { icon: 'bi-truck', color: 'success', label: 'Dar Baixa', code: '1' }
-        };
-
-        const grupos = { 'TRANSFERENCIA': [], 'DESPACHO': [], 'RETIRADA': [], 'ENTREGA': [] };
-        let totalFinalizadas = 0;
-        let htmlConcluidos = '';
-
-        // PROCESSA OS DADOS PARA SABER OS CONTADORES (MESMO QUE NÃO MUDE A TELA)
-        notas.forEach(nf => {
-            const tipo = nf.tipo_operacao || 'ENTREGA';
-            if (nf.ja_baixada) {
-                totalFinalizadas++;
-                const config = TEMA_OPERACAO[tipo] || TEMA_OPERACAO['ENTREGA'];
-                htmlConcluidos += gerarCardHTML(nf, config, true, false);
-            } else {
-                if (grupos[tipo]) grupos[tipo].push(nf);
-                else grupos['ENTREGA'].push(nf);
-            }
-        });
-
-        // SE NÃO MUDOU NADA, APENAS ATUALIZA OS CONTADORES E SAI
-        if (cacheDadosRaw === novosDadosJSON) {
-            console.log("ℹ️ Sem alterações. Atualizando apenas contadores.");
-            setTimeout(() => {
-                atualizarVisualContadores(contador, notas, totalFinalizadas);
-            }, 800);
-            return;
-        }
-
-        // --- 4. SE HOUVE MUDANÇA, REDESENHA A TELA ---
+        
         if (areaDinamica && notas.length > 0) {
-            // INJEÇÃO DA BUSCA (MANTIDO ORIGINAL)
+            // 1. INJEÇÃO DA BUSCA (Se não existir) - MANTIDO ORIGINAL
             if (!document.getElementById('input-busca-nfe')) {
                 areaDinamica.innerHTML = `
-                    <div class="search-box mb-4">
+                    <div class="search-box mb-4 animate__animated animate__fadeInDown">
                         <div class="input-group shadow-sm position-relative" style="border-radius: 15px; overflow: hidden;">
-                            <span class="input-group-text bg-white border-0"><i class="bi bi-search text-muted"></i></span>
-                            <input type="text" id="input-busca-nfe" class="form-control border-0 p-3" placeholder="Filtrar por Número ou Chave..." oninput="filtrarNotasOffline(); toggleClearButton();">
+                            <span class="input-group-text bg-white border-0">
+                                <i class="bi bi-search text-muted"></i>
+                            </span>
+                            <input type="text" id="input-busca-nfe" class="form-control border-0 p-3" 
+                                   placeholder="Filtrar por Número ou Chave..." oninput="filtrarNotasOffline(); toggleClearButton();">
+                            <button type="button" id="btn-limpar-busca" class="btn btn-white border-0 text-danger d-none" onclick="limparBusca()">
+                                <i class="bi bi-x-circle-fill" style="font-size: 1.3rem;"></i>
+                            </button>
+                            <button class="btn btn-white border-0 text-primary" onclick="abrirScanner()">
+                                <i class="bi bi-camera-fill" style="font-size: 1.5rem;"></i>
+                            </button>
                         </div>
+                        <input type="file" id="leitor-nfe-camera" accept="image/*" capture="environment" style="display: none" onchange="lerCodigoBarra(this)">
                     </div>
                     <div id="container-baixa-coletiva"></div>
                     <div id="lista-notas-container"></div>
                     <div id="lista-notas-concluidas" class="mt-4 pt-3 border-top d-none">
                         <div class="d-flex align-items-center mb-3 text-success opacity-75">
-                            <i class="bi bi-check-all fs-4 me-2"></i><h6 class="mb-0 fw-bold text-uppercase">Itens Concluídos</h6>
+                            <i class="bi bi-check-all fs-4 me-2"></i>
+                            <h6 class="mb-0 fw-bold text-uppercase">Itens Concluídos</h6>
                         </div>
                         <div id="container-concluidos-cards" class="opacity-50"></div>
                     </div>
@@ -467,8 +297,36 @@ async function atualizarListaViva(numeroManifesto) {
             const containerConcluidos = document.getElementById('container-concluidos-cards');
             const secaoConcluidos = document.getElementById('lista-notas-concluidas');
             const containerColetiva = document.getElementById('container-baixa-coletiva');
+            
+            const TEMA_OPERACAO = {
+                'TRANSFERENCIA': { icon: 'bi-box-arrow-right', color: 'primary', label: 'Registrar Chegada', code: '98' },
+                'DESPACHO':      { icon: 'bi-airplane', color: 'info', label: 'Confirmar Despacho', code: '50' },
+                'RETIRADA':      { icon: 'bi-box-arrow-in-left', color: 'warning', label: 'Confirmar Retirada', code: '51' },
+                'ENTREGA':       { icon: 'bi-truck', color: 'success', label: 'Dar Baixa', code: '1' }
+            };
 
-            // MONTA O HTML DAS PENDENTES
+            const grupos = { 'TRANSFERENCIA': [], 'DESPACHO': [], 'RETIRADA': [], 'ENTREGA': [] };
+            let htmlConcluidos = '';
+            let totalFinalizadas = 0;
+
+            // 2. SEPARAÇÃO DAS NOTAS (Pendentes por Grupo vs Concluídas Única)
+            notas.forEach(nf => {
+                const tipo = nf.tipo_operacao || 'ENTREGA';
+                const baixada = nf.ja_baixada;
+                const config = TEMA_OPERACAO[tipo] || TEMA_OPERACAO['ENTREGA'];
+
+                if (baixada) {
+                    totalFinalizadas++;
+                    // Gera o card para a seção de concluídos (sem botão de ação)
+                    htmlConcluidos += gerarCardHTML(nf, config, true);
+                } else {
+                    // Adiciona ao grupo para as seções de trabalho
+                    if (grupos[tipo]) grupos[tipo].push(nf);
+                    else grupos['ENTREGA'].push(nf);
+                }
+            });
+
+            // 3. RENDERIZAÇÃO DAS NOTAS PENDENTES (AGRUPADAS)
             let htmlPendentes = '';
             Object.keys(grupos).forEach(tipo => {
                 if (grupos[tipo].length > 0) {
@@ -476,15 +334,16 @@ async function atualizarListaViva(numeroManifesto) {
                     htmlPendentes += `<div class="group-divider mb-2 mt-3 small fw-bold text-muted text-uppercase" style="background: #e9ecef; padding: 5px 10px; border-radius: 5px;">
                                         <i class="bi ${config.icon} me-1"></i> ${tipo} (${grupos[tipo].length})
                                       </div>`;
+
                     grupos[tipo].forEach(nf => {
-                        const estaSincronizando = notasNoLimbo.includes(nf.chave_acesso);
-                        htmlPendentes += gerarCardHTML(nf, config, false, estaSincronizando);
+                        htmlPendentes += gerarCardHTML(nf, config, false);
                     });
                 }
             });
 
             containerNotas.innerHTML = htmlPendentes;
 
+            // 4. EXIBIÇÃO DOS CONCLUÍDOS
             if (totalFinalizadas > 0) {
                 containerConcluidos.innerHTML = htmlConcluidos;
                 secaoConcluidos.classList.remove('d-none');
@@ -492,80 +351,49 @@ async function atualizarListaViva(numeroManifesto) {
                 secaoConcluidos.classList.add('d-none');
             }
 
-            // BAIXA COLETIVA
+            // --- RESTANTE DA LÓGICA ORIGINAL (BAIXA COLETIVA, CONTADORES, REFRESH, KM FINAL) ---
             const transfPendentes = grupos['TRANSFERENCIA'].filter(n => !n.ja_baixada);
             if (transfPendentes.length > 0 && containerColetiva) {
-                containerColetiva.innerHTML = `<div class="card bg-primary text-white mb-4 shadow-sm border-0"><div class="card-body d-flex justify-content-between align-items-center"><div><small class="fw-bold opacity-75">OPERAÇÃO FILIAL</small><h6 class="mb-0">Chegada de ${transfPendentes.length} Notas</h6></div><button class="btn btn-light btn-sm fw-bold text-primary px-3" onclick="registrarChegadaColetiva('${numeroManifesto}')">CONFIRMAR CHEGADA</button></div></div>`;
+                containerColetiva.innerHTML = `<div class="card bg-primary text-white mb-4 shadow-sm border-0 animate__animated animate__pulse"><div class="card-body d-flex justify-content-between align-items-center"><div><small class="fw-bold opacity-75">OPERAÇÃO FILIAL</small><h6 class="mb-0">Chegada de ${transfPendentes.length} Notas</h6></div><button class="btn btn-light btn-sm fw-bold text-primary px-3" onclick="registrarChegadaColetiva('${numeroManifesto}')">BAIXAR TUDO</button></div></div>`;
             } else if (containerColetiva) { containerColetiva.innerHTML = ''; }
 
-            // FINALIZAÇÃO: ATUALIZA CONTADORES E CACHE
-            atualizarVisualContadores(contador, notas, totalFinalizadas);
-            filtrarNotasOffline();
+            if (contador) {
+                let htmlContadores = `<div class="d-flex gap-2"><span class="badge bg-secondary p-2">${notas.length} Notas no Manifesto</span>`;
+                if (totalFinalizadas > 0) htmlContadores += `<span class="badge bg-success p-2 animate__animated animate__bounceIn"><i class="bi bi-check2-circle"></i> ${totalFinalizadas} Finalizadas</span>`;
+                if (notas.length > 0 && totalFinalizadas === notas.length) {
+                    const modalKM = new bootstrap.Modal(document.getElementById('kmFinalModal'));
+                    setTimeout(() => { modalKM.show(); }, 800);
+                }
+                htmlContadores += `</div>`;
+                contador.innerHTML = htmlContadores;
+            }
 
-            localStorage.setItem(`cache_notas_${numeroManifesto}`, JSON.stringify({
-                html: areaDinamica.innerHTML,
-                timestamp: new Date().getTime()
-            }));
-            localStorage.setItem(`cache_dados_puros_${numeroManifesto}`, novosDadosJSON);
+            filtrarNotasOffline();
         }
     } catch (err) { console.error("Erro na atualização viva:", err); }
 }
 
-// FUNÇÃO SIMPLES SÓ PARA OS BADGES DE CIMA
-function atualizarVisualContadores(contador, notas, totalFinalizadas) {
-    if (!contador) return;
-    let html = `<div class="d-flex gap-2 justify-content-center">
-                    <span class="badge bg-secondary p-2">${notas.length} Notas no Manifesto</span>`;
-    if (totalFinalizadas > 0) {
-        html += `<span class="badge bg-success p-2 animate__animated animate__bounceIn">
-                    <i class="bi bi-check2-circle"></i> ${totalFinalizadas} Finalizadas</span>`;
-    }
-    html += `</div>`;
-    contador.innerHTML = html;
-
-    // Se tudo foi entregue, mostra o modal do KM
-    if (notas.length > 0 && totalFinalizadas === notas.length) {
-        const modalKM = new bootstrap.Modal(document.getElementById('kmFinalModal'));
-        setTimeout(() => { modalKM.show(); }, 800);
-    }
-}
-// =====================================================
 // FUNÇÃO AUXILIAR PARA GERAR O CARD (EVITA DUPLICAR CÓDIGO)
-// =====================================================
-function gerarCardHTML(nf, config, baixada, sincronizando = false) {
-    // Se estiver sincronizando, usamos o amarelo (warning), se baixada verde (success), senão a cor da config
-    const cor = sincronizando ? 'warning' : (baixada ? 'success' : config.color);
-    const icone = sincronizando ? 'bi-cloud-arrow-up' : (baixada ? 'bi-check-circle-fill' : config.icon);
-    
+function gerarCardHTML(nf, config, baixada) {
+    const cor = baixada ? 'success' : config.color;
+    const icone = baixada ? 'bi-check-circle-fill' : config.icon;
     const chave = nf.chave_acesso || '';
     const numero = nf.numero_nota || '';
     const tipo = nf.tipo_operacao || 'ENTREGA';
 
-    // Classe especial para o card que está subindo
-    const classeSincronizando = sincronizando ? 'opacity-75 shadow-none border-dashed' : '';
-
     return `
-        <div class="card mb-3 shadow-sm border-start border-${cor} border-4 animate__animated ${baixada || sincronizando ? '' : 'animate__fadeInUp'} ${classeSincronizando}" 
+        <div class="card mb-3 shadow-sm border-start border-${cor} border-4 animate__animated ${baixada ? '' : 'animate__fadeInUp'}" 
         id="card-nf-${numero}"
         data-chave="${chave}"
         data-numero="${numero}">
             <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-start">
                     <h6 class="fw-bold mb-1">📝NF ${numero}</h6>
-                    <span>
-                        <i class="bi ${icone} text-${cor} ${sincronizando ? 'animate__animated animate__flash animate__infinite' : ''}" 
-                           style="font-size: 1.2rem;"></i>
-                    </span>
+                    <span><i class="bi ${icone} text-${cor}" style="font-size: 1.2rem;"></i></span>
                 </div>
                 <p class="small text-muted mb-1">👤 ${nf.destinatario}</p>
                 <p class="small text-muted mb-2" style="font-size: 0.75rem;"><i class="bi bi-geo-alt"></i> ${nf.endereco_entrega}</p>
-                
-                ${sincronizando ? `
-                    <div class="alert alert-warning py-1 px-2 mb-0 d-flex align-items-center justify-content-center" style="font-size: 0.8rem;">
-                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                        <span class="fw-bold text-uppercase">Sincronizando...</span>
-                    </div>
-                ` : !baixada ? `
+                ${!baixada ? `
                     <button class="btn btn-sm btn-${config.color} w-100 fw-bold" 
                         onclick="${
                             tipo === 'ENTREGA' 
@@ -620,114 +448,32 @@ function renderSearchScreen(message = null, type = 'info') {
     document.getElementById('search-form').addEventListener('submit', handleManifestoSearch);
 }
 
-// =====================================================
-// VERIFICAÇÃO DE ESTADO INICIAL (MANIFESTO ATIVO) - COMPLETA
-// =====================================================
 async function verificarEstadoInicial() {
-    const content = document.getElementById('app-content');
-    const mID_salvo = localStorage.getItem('manifesto_ativo');
-    
-    // 1. CARREGAMENTO INSTANTÂNEO (UX Otimista)
-    if (mID_salvo) {
-        console.log("⚡ Iniciando com dados locais...");
-        manifestoAtual = mID_salvo;
-        renderListaEntregasFinal(mID_salvo);
-        
-        const cache = localStorage.getItem(`cache_notas_${mID_salvo}`);
-        if (cache) {
-            const areaDinamica = document.getElementById('area-lista-dinamica');
-            if (areaDinamica) {
-                areaDinamica.innerHTML = JSON.parse(cache).html;
-            }
-        }
-    } else {
-        // 2. SE NÃO TEM CACHE, LIMPA O INPUT E MOSTRA O SKELETON (NOVO)
-        // Substituímos o spinner antigo pelo Skeleton para uma sensação melhor
-        if (content) {
-            mostrarSkeletonLoading(); 
-        }
-    }
-
-    // 3. VERIFICAÇÃO EM SEGUNDO PLANO
     try {
         const response = await authFetch(`${API_BASE}manifesto/verificar-ativo/`);
-        
-        if (!response || !response.ok) {
-             if (!mID_salvo) renderSearchScreen(); // Se falhou e não tem nada, mostra busca
-             return;
-        }
-        
+        if (!response || !response.ok) return;
         const data = await response.json();
         
         if (data.tem_manifesto) {
-            manifestoAtual = data.numero_manifesto;
+            // --- AQUI ESTÁ A CHAVE ---
+            manifestoAtual = data.numero_manifesto; // Salva na variável global
             localStorage.setItem('manifesto_ativo', data.numero_manifesto);
-
-            // Se a tela de loading estava ativa, a renderListaEntregasFinal vai montar a estrutura
-            if (!mID_salvo) renderListaEntregasFinal(data.numero_manifesto);
-
+            
+            // Garante que o span no HTML tenha o ID para a função de finalizar não dar erro
             const el = document.getElementById('manifesto-id-display');
             if (el) el.innerText = data.numero_manifesto;
 
-            atualizarListaViva(data.numero_manifesto);
+            renderListaEntregasFinal(data.numero_manifesto);
         } else {
-            console.log("ℹ️ Nenhum manifesto ativo.");
-            localStorage.removeItem('manifesto_ativo');
-            if(mID_salvo) localStorage.removeItem(`cache_notas_${mID_salvo}`);
-            renderSearchScreen(); // Agora sim, aqui ele mostra o input de busca
+            renderSearchScreen();
         }
     } catch (err) { 
-        console.warn("📡 Falha na verificação de status.");
-        if (!mID_salvo) renderSearchScreen(); 
+        renderSearchScreen(); 
     }
 }
 async function renderListaEntregasFinal(numeroManifesto) {
     // Mesma lógica do renderEstruturaLista, mas usada para carregamento inicial (Estado Ativo)
     renderEstruturaLista(numeroManifesto);
-}
-
-
-
-// =====================================================
-// ATUALIZA CONTATO DE ENTREGAS SEM RELOAD
-// =====================================================
-function atualizarContadorVisual() {
-    const contadorContainer = document.getElementById('contador-notas');
-    if (!contadorContainer) return;
-
-    // Procura o badge de "Finalizadas"
-    let badgeSucesso = contadorContainer.querySelector('.bg-success');
-
-    if (badgeSucesso) {
-        // Se já existe, pega o número atual, soma 1 e atualiza o texto
-        let texto = badgeSucesso.innerText;
-        let numeroAtual = parseInt(texto.replace(/\D/g, '')) || 0;
-        let novoNumero = numeroAtual + 1;
-        
-        badgeSucesso.innerHTML = `<i class="bi bi-check2-circle"></i> ${novoNumero} Finalizadas`;
-        badgeSucesso.classList.add('animate__bounceIn'); // Dá um pulinho
-        
-        // Remove a animação depois para poder repetir na próxima
-        setTimeout(() => badgeSucesso.classList.remove('animate__bounceIn'), 1000);
-    } else {
-        // Se for a primeira nota do dia, cria o badge do zero
-        const novoBadge = `<span class="badge bg-success p-2 animate__bounceIn"><i class="bi bi-check2-circle"></i> 1 Finalizadas</span>`;
-        contadorContainer.innerHTML += novoBadge;
-    }
-}
-
-// =====================================================
-// FUNÇÃO PARA VER SE O MANIFESTO ESTÁ COMPLETO E FINALIZAR
-// =====================================================
-function verificarFimDoManifesto() {
-    const container = document.getElementById('lista-notas-container');
-    const notasRestantes = container.querySelectorAll('.card');
-
-    // Se não houver mais cards visíveis na seção de pendentes
-    if (notasRestantes.length === 0) {
-        const modalKM = new bootstrap.Modal(document.getElementById('kmFinalModal'));
-        setTimeout(() => { modalKM.show(); }, 800);
-    }
 }
 
 // =====================================================
@@ -746,6 +492,7 @@ async function salvarRegistro() {
     const inputNumero = document.getElementById('hidden-numero-nf');
     const numeroNF = inputNumero ? inputNumero.value : '';
 
+    // Elementos Nota Retida
     const isRetida = document.getElementById('check-nota-retida').checked;
     const inputObs = document.getElementById('input-observacao').value;
 
@@ -761,6 +508,7 @@ async function salvarRegistro() {
             return;
         }
     } else {
+        // Validação original de Foto (apenas se NÃO for retida)
         if ((cod === "1" || cod === "2") && !temFoto) {
             alert("A foto é obrigatória para este código de ocorrência!");
             return;
@@ -782,55 +530,67 @@ async function salvarRegistro() {
     formData.append('numero_nota', numeroNF);
     formData.append('manifesto_id', mID);
     formData.append('recebedor', inputRecebedor.value || '');
+    
+    // Dados da Retenção
     formData.append('nota_retida', isRetida);
     formData.append('observacao_retida', inputObs);
+    console.log("Dados do FormData:", {
+        ocorrencia_codigo: cod,
+        chave_acesso: chaveNF,
+        numero_nota: numeroNF,
+        manifesto_id: mID,
+        recebedor: inputRecebedor.value || '',
+        nota_retida: isRetida,
+        observacao_retida: inputObs
+    });
 
     // 5. Captura de Coordenadas GPS
     try {
         const coords = await getCoords(); 
-        if (coords && coords.lat && coords.lon) {
+        if (coords) {
             formData.append('latitude', coords.lat);
             formData.append('longitude', coords.lon);
-        } else {
-            // Se o GPS falhar, enviamos 0 para não dar erro de "null" no Django
-            formData.append('latitude', "0.000000");
-            formData.append('longitude', "0.000000");
         }
     } catch (gpsErr) {
-        console.warn("GPS falhou, enviando zerado para evitar erro 400");
-        formData.append('latitude', "0.000000");
-        formData.append('longitude', "0.000000");
+        console.warn("Não foi possível obter GPS:", gpsErr);
     }
 
-    // 6. Conversão do Canvas para Imagem (Blob)
-    let fotoBlob = null;
+    // 6. Conversão do Canvas para Imagem (Blob) - Apenas se não for retida e tiver foto
     if (!isRetida && temFoto) {
-        fotoBlob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.70));
-        formData.append('foto', fotoBlob, `mft_${mID}_${chaveNF}.jpg`);
+        const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.85));
+        formData.append('foto', blob, `mft_${mID}_${chaveNF}.jpg`);
     }
 
-    // 7. Envio para o Backend com CONTINGÊNCIA OFFLINE
+    // 7. Envio para o Backend
     try {
         const response = await authFetch(`${API_BASE}manifesto/registrar-baixa/`, {
             method: 'POST',
             body: formData 
         });
 
-        // =====================================================
-        // AJUSTE PARA ERRO 500: Se o servidor falhar (ex: banco fora),
-        // nós "jogamos" o erro para o CATCH para salvar offline.
-        // =====================================================
-        if (!response.ok && response.status >= 500) {
-            throw new Error("Erro Crítico no Servidor");
-        }
-
         const data = await response.json();
 
         if (response.ok) {
             atualizarStatusUI('success', '✅ Registro Cadastrado!', 'A baixa foi realizada com sucesso.');
-            processarSumiçoNota(numeroNF);
+            
+            // 1. Identifica o card da nota na tela
+            const cardParaRemover = document.getElementById(`card-nf-${numeroNF}`);
+
+            if (cardParaRemover) {
+                // Efeito visual de sumir
+                cardParaRemover.classList.add('animate__fadeOutRight');
+                setTimeout(() => {
+                    cardParaRemover.remove(); // Tira do HTML
+                    verificarFimDoManifesto(); // Verifica se era a última nota
+                }, 500);
+            }
+
+            // 2. Fecha o modal de status após 1.5s (sem dar reload!)
+            setTimeout(() => {
+                statusModal.hide();
+            }, 1500);
+
         } else {
-            // Se o servidor retornar erro controlado (ex: 400 - Validação)
             if (data.status_integracao === 'erro_tms') {
                 atualizarStatusUI('warning', '⚠️ Salvo com Alerta', `O canhoto foi salvo no App, mas houve um erro na ESL: ${data.erro}`);
             } else {
@@ -839,60 +599,11 @@ async function salvarRegistro() {
             configurarBotaoWhats(data.erro, chaveNF);
         }
     } catch (err) {
-        // --- MÁGICA DO MODO OFFLINE (Disparado por falta de net OU Erro 500) ---
-        console.warn("Falha detectada. Salvando no banco de dados interno...");
-
-        try {
-            const db = await abrirDB();
-            const transaction = db.transaction('baixas_pendentes', 'readwrite');
-            const store = transaction.objectStore('baixas_pendentes');
-
-            const objOffline = {
-                id: Date.now().toString(),
-                numeroNF: numeroNF,
-                chaveNF: chaveNF,
-                mID: mID,
-                campos: {
-                    ocorrencia_codigo: cod,
-                    recebedor: inputRecebedor.value || '',
-                    nota_retida: isRetida,
-                    observacao_retida: inputObs,
-                    latitude: formData.get('latitude'),
-                    longitude: formData.get('longitude')
-                },
-                foto: fotoBlob 
-            };
-
-            store.add(objOffline);
-            
-            // Atualiza a nuvem para Amarelo na hora
-            await atualizarIconeNuvem(); 
-
-            atualizarStatusUI('warning', '📡 Modo Offline Ativado', 'O sinal oscilou. Sua baixa foi guardada no celular e será enviada assim que o sinal voltar.');
-            
-            processarSumiçoNota(numeroNF);
-
-        } catch (dbErr) {
-            console.error("Erro crítico ao salvar no DB interno:", dbErr);
-            atualizarStatusUI('error', '❌ Erro de Sistema', 'Não foi possível salvar offline.');
-        }
+        atualizarStatusUI('error', '📡 Erro de Conexão', 'Não foi possível falar com o servidor.');
+        configurarBotaoWhats("Erro de conexão/rede no momento da baixa", chaveNF);
     }
 }
-// Função auxiliar para não repetir código de remover nota
-function processarSumiçoNota(numeroNF) {
-    const cardParaRemover = document.getElementById(`card-nf-${numeroNF}`);
-    if (cardParaRemover) {
-        cardParaRemover.classList.add('animate__fadeOutRight');
-        setTimeout(() => {
-            cardParaRemover.remove();
-            atualizarContadorVisual();
-            verificarFimDoManifesto();
-        }, 500);
-    }
-    setTimeout(() => {
-        statusModal.hide();
-    }, 2000);
-}
+
 /**
  * Função Auxiliar para atualizar a interface do Modal de Status
  */
@@ -926,7 +637,7 @@ function configurarBotaoWhats(erroMsg, chave) {
     btn.style.display = 'block';
     btn.onclick = () => {
         const msg = `Olá! Tive um problema ao registrar a baixa.\nErro: ${erroMsg}\nChave: ${chave}`;
-        const url = `https://wa.me/5521980064787?text=${encodeURIComponent(msg)}`;
+        const url = `https://wa.me/55SEUNUMERO?text=${encodeURIComponent(msg)}`;
         window.open(url, '_blank');
     };
 }
@@ -981,9 +692,7 @@ function handleCameraNativa(event) {
     };
     reader.readAsDataURL(file);
 }
-// =========================================================================
-// Abre o modal de baixa com os dados da nota e configurações específicas
-// =========================================================================
+
 function abrirModalBaixa(numeroNota, chaveAcesso, tipo) {
     const tituloEl = document.getElementById('modal-titulo-nf');
     const inputChave = document.getElementById('hidden-chave-nf');
@@ -992,62 +701,38 @@ function abrirModalBaixa(numeroNota, chaveAcesso, tipo) {
     const cameraSection = document.querySelector('.camera-container');
     const cameraLabel = document.getElementById('label-camera');
     const btnNovaFoto = document.getElementById('btn-nova-foto');
-    const canvas = document.getElementById('canvas-preview');
     
     // Elementos da Modificação de Nota Retida
     const checkRetida = document.getElementById('check-nota-retida');
     const campoObs = document.getElementById('campo-observacao');
     const inputObs = document.getElementById('input-observacao');
 
-    // =====================================================
-    // 1. LIMPEZA TOTAL (RESET) - PARA NÃO REAPROVEITAR DADOS
-    // =====================================================
-    if (inputObs) inputObs.value = '';
-    document.getElementById('input-recebedor').value = '';
-    
-    // Reset da Câmera e Canvas
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height); // Limpa o desenho anterior
-    canvas.dataset.temFoto = "false"; // Reseta validador
-    canvas.style.display = 'none';
-
-    // Reset Visual do Placeholder (Volta a ser cinza e sem check)
-    const icone = document.getElementById('icone-camera');
-    const texto = document.getElementById('texto-status-foto');
-    if (icone) {
-        icone.className = "bi bi-camera text-secondary";
-        icone.style.fontSize = "1.8rem";
-    }
-    if (texto) {
-        texto.innerText = "Nenhuma foto capturada";
-        texto.className = "text-muted small fw-bold mb-0";
-    }
-
-    // Reset dos Botões
-    cameraLabel.style.display = 'block';
-    btnNovaFoto.style.display = 'none';
-
-    // =====================================================
-    // 2. CONFIGURAÇÃO DO MODAL COM OS NOVOS DADOS
-    // =====================================================
     tituloEl.innerText = `📝 ${tipo} - NF ${numeroNota}`;
+    
+    // Alimenta os campos que o salvarRegistro() vai ler
     inputChave.value = (chaveAcesso && chaveAcesso !== 'null') ? chaveAcesso : '';
     if (inputNumero) inputNumero.value = numeroNota || ''; 
 
+    // Reset padrão ao abrir
+    document.getElementById('canvas-preview').style.display = 'none';
     document.getElementById('placeholder-camera').style.display = 'block';
     
     // Reset dos campos de Nota Retida
     if (checkRetida) {
         checkRetida.checked = false;
         campoObs.style.display = 'none';
+        inputObs.value = '';
 
+        // Lógica de monitoramento do Switch
         checkRetida.onchange = function() {
             if (this.checked) {
+                // Se marcar retida: esconde câmera e mostra texto
                 cameraSection.style.display = 'none';
                 cameraLabel.style.display = 'none';
                 btnNovaFoto.style.display = 'none';
                 campoObs.style.display = 'block';
             } else {
+                // Se desmarcar: volta ao estado original baseado no tipo
                 if (tipo === 'ENTREGA') {
                     cameraSection.style.display = 'block';
                     cameraLabel.style.display = 'block';
@@ -1057,7 +742,7 @@ function abrirModalBaixa(numeroNota, chaveAcesso, tipo) {
         };
     }
 
-    // REGRA DE OURO
+    // REGRA DE OURO: Se não for ENTREGA, esconde a câmera e pré-seleciona o código
     if (tipo !== 'ENTREGA') {
         cameraSection.style.display = 'none';
         cameraLabel.style.display = 'none';
@@ -1149,52 +834,9 @@ async function iniciarSincronismo(numeroManifesto) {
         elBtnFechar.classList.remove('d-none'); // Deixa o motorista fechar o modal
     }
 }
-// =============================================================================
-// Função para atualizar o ícone de nuvem no header com base nas baixas pendentes
-// =============================================================================
-async function atualizarIconeNuvem() {
-    try {
-        const db = await abrirDB();
-        const transaction = db.transaction('baixas_pendentes', 'readonly');
-        const store = transaction.objectStore('baixas_pendentes');
-        
-        const request = store.count(); 
-        
-        request.onsuccess = function() {
-            const totalPendentes = request.result;
-            const container = document.getElementById('nuvem-status');
-            if (!container) return;
 
-            if (totalPendentes > 0) {
-                // Nuvem AMARELA: Notas presas no celular
-                // animate__pulse faz ela ficar "batendo" como um coração
-                container.innerHTML = `
-                    <div class="position-relative animate__animated animate__pulse animate__infinite">
-                        <i class="bi bi-cloud-arrow-up-fill text-warning" style="font-size: 1.8rem;" title="Notas pendentes"></i>
-                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" 
-                              style="font-size: 0.7rem; min-width: 20px; border: 2px solid white;">
-                            ${totalPendentes}
-                        </span>
-                    </div>`;
-            } else {
-                // Nuvem VERDE: Tudo sincronizado com o servidor
-                // animate__bounceIn faz ela dar um "pulo" quando termina de enviar
-                container.innerHTML = `
-                    <div class="animate__animated animate__bounceIn">
-                        <i class="bi bi-cloud-check-fill text-success" style="font-size: 1.8rem;" title="Tudo sincronizado"></i>
-                    </div>`;
-                
-                // Remove a animação após 2 segundos para ficar estática e limpa
-                setTimeout(() => {
-                    const el = container.querySelector('.animate__animated');
-                    if (el) el.classList.remove('animate__animated', 'animate__bounceIn');
-                }, 2000);
-            }
-        };
-    } catch (err) {
-        console.error("Erro ao atualizar ícone da nuvem:", err);
-    }
-}
+
+
 
 // =====================================================
 // UTILITÁRIOS FINAIS
@@ -1415,7 +1057,7 @@ async function registrarChegadaColetiva(manifestoId) {
                     
                     <div class="d-grid gap-2 mt-4">
                         <button class="btn btn-primary btn-lg fw-bold" id="btn-confirmar-massa">
-                            SIM, REGISTRAR TUDAS
+                            SIM, REGISTRAR TUDO
                         </button>
                         <button class="btn btn-light" data-bs-dismiss="modal">CANCELAR</button>
                     </div>
@@ -1511,71 +1153,33 @@ function abrirModalPerguntaOperacional(numeroNota, chave, tipo) {
 
 async function executarBaixaOp(chave, tipo, isCompleto) {
     const modalEl = document.getElementById('modalOperacional');
-    const bootstrapModal = bootstrap.Modal.getInstance(modalEl);
-    if (bootstrapModal) bootstrapModal.hide();
+    bootstrap.Modal.getInstance(modalEl).hide();
 
     atualizarStatusUI('loading', 'Processando...', 'Sincronizando com a fila do sistema.');
     statusModal.show();
 
-    const dadosBaixa = {
-        tipo_operacao: tipo,
-        chave_acesso: chave,
-        manifesto_id: manifestoAtual, // Usando sua variável global
-        is_completo: isCompleto,
-        data_registro: new Date().toISOString()
-    };
-
     try {
         const response = await authFetch(`${API_BASE}manifesto/baixa-operacional/`, {
             method: 'POST',
-            body: JSON.stringify(dadosBaixa)
+            body: JSON.stringify({
+                tipo_operacao: tipo,
+                chave_acesso: chave,
+                manifesto_id: manifestoAtual,
+                is_completo: isCompleto
+            })
         });
 
-        if (response && response.ok) {
+        if (response.ok) {
             atualizarStatusUI('success', '✅ Sucesso!', 'Ocorrência enviada para processamento.');
-            
-            // CORREÇÃO: Usando a variável global manifestoAtual
-            setTimeout(() => {
-                statusModal.hide();
-                if (typeof atualizarListaViva === 'function') {
-                    atualizarListaViva(manifestoAtual); 
-                }
-            }, 1500);
-
+            setTimeout(() => location.reload(), 2000);
         } else {
-            throw new Error('Erro no servidor');
+            atualizarStatusUI('error', '❌ Falha', 'Erro ao registrar ocorrência.');
         }
-
     } catch (err) {
-        console.warn("📡 Salvando no IndexedDB devido a falha de rede/servidor...");
-
-        try {
-            const db = await abrirDB();
-            const tx = db.transaction('baixas_pendentes', 'readwrite');
-            const store = tx.objectStore('baixas_pendentes');
-            
-            await store.put({
-                chaveNF: chave,
-                dados: dadosBaixa,
-                tipo: 'operacional',
-                timestamp: Date.now()
-            });
-
-            atualizarStatusUI('warning', '📡 Modo Offline', 'Sem sinal! A baixa será enviada automaticamente depois.');
-            
-            setTimeout(() => {
-                statusModal.hide();
-                if (typeof atualizarListaViva === 'function') {
-                    atualizarListaViva(manifestoAtual);
-                }
-            }, 2000);
-
-        } catch (dbErr) {
-            console.error("Erro crítico ao salvar no IndexedDB:", dbErr);
-            atualizarStatusUI('error', '❌ Falha Crítica', 'Erro ao salvar localmente.');
-        }
+        atualizarStatusUI('error', '📡 Erro de Conexão', 'Verifique sua internet.');
     }
 }
+
 // Função para transferência unitária (Nota por Nota)
 async function confirmarTransferenciaIndividual(numeroNota, chave) {
     const confirmar = await new Promise(resolve => {
@@ -1609,68 +1213,3 @@ async function confirmarTransferenciaIndividual(numeroNota, chave) {
         executarBaixaOp(chave, 'TRANSFERENCIA', true);
     }
 }
-
-// =====================================================
-// LOADING NOVO CARREGAMENTO
-// =====================================================
-function mostrarSkeletonLoading() {
-    const content = document.getElementById('app-content');
-    if (!content) return;
-
-    // A mesma estrutura do HTML acima
-    const cardNF = `
-        <div class="skeleton-card-nf">
-            <div class="d-flex justify-content-between mb-3">
-                <div class="skeleton-line shimmer-effect" style="width: 40%; height: 18px;"></div>
-                <div class="skeleton-line shimmer-effect" style="width: 25px; height: 25px; border-radius: 50%;"></div>
-            </div>
-            <div class="skeleton-line shimmer-effect" style="width: 85%; height: 12px;"></div>
-            <div class="skeleton-line shimmer-effect" style="width: 65%; height: 12px;"></div>
-            <div class="skeleton-line shimmer-effect w-100" style="height: 38px; margin-top: 12px; border-radius: 8px;"></div>
-        </div>
-    `;
-
-    content.innerHTML = `
-        <div class="p-3 animate__animated animate__fadeIn">
-            <div class="shimmer-effect mb-4" style="height: 55px; width: 100%; border-radius: 15px;"></div>
-            <div class="shimmer-effect mb-3" style="height: 25px; width: 140px; border-radius: 5px;"></div>
-            ${cardNF}
-            ${cardNF}
-        </div>
-    `;
-}
-// =====================================================
-document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => {
-        atualizarIconeNuvem();
-        // Tenta sincronizar automaticamente caso o motorista tenha acabado de abrir com net
-        sincronizarBaixasPendentes(); 
-    }, 1500); 
-});
-
-
-
-// 1. Escuta quando o navegador avisa que a internet VOLTOU
-window.addEventListener('online', () => {
-    console.log("📡 Sinal de rede detectado! Iniciando sincronização...");
-    
-    // Damos 3 segundos para a conexão estabilizar antes de tentar subir
-    setTimeout(() => {
-        sincronizarBaixasPendentes();
-    }, 3000);
-});
-
-// 2. Escuta quando a internet CAIU (para atualizar o ícone na hora)
-window.addEventListener('offline', () => {
-    console.log("🚫 O dispositivo ficou offline.");
-    atualizarIconeNuvem();
-});
-
-setInterval(() => {
-    if (navigator.onLine) {
-        console.log("⏰ Verificação periódica de notas pendentes...");
-        sincronizarBaixasPendentes();
-    }
-}, 5 * 60 * 1000); // 5 minutos em milissegundos
-
-
