@@ -106,6 +106,7 @@
                         <th class="ps-4">Motorista</th>
                         <th class="text-center">Manifestos</th>
                         <th class="text-center">Sucessos</th>
+                        <th class="text-center">Pendentes</th>
                         <th class="text-center">Falta de Tempo (20)</th>
                         <th>Reputação / Score</th>
                         <th class="text-end pe-4">Ações</th>
@@ -133,7 +134,13 @@
                         </td>
                         <td class="text-center fw-bold text-dark">{{ m.total_mfts }}</td>
                         <td class="text-center">
-                            <span class="badge bg-success-subtle text-success px-3">{{ m.baixas_sucesso }}</span>
+                            <span class="badge bg-success-subtle text-success px-3">
+                                <i class="bi bi-check-circle me-1"></i> {{ m.baixas_sucesso }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-warning-subtle text-warning px-3">
+                                <i class="bi bi-exclamation-triangle me-1"></i> {{ m.baixas_pendentes }}
+                            </span>
                         </td>
                         <td class="text-center">
                             {% if m.ocorrencias_20 > 0 %}

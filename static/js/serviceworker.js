@@ -1,103 +1,127 @@
-// UNIFICADO: Versão única para controle total de cache
-const CACHE_NAME = 'fluxo-logistica-v1.24'; // Mude aqui para forçar atualização
+// UNIFICADO: Versão v1.26 (Corrigida para evitar erro de Clone/POST)
+const CACHE_NAME = 'fluxo-logistica-v1.26'; 
 
 const filesToCache = [
     '/app/',
     '/app/login/',
-    //'/static/css/app.css?v=1.0.5',
+    '/static/css/app_v2.css',
     '/static/css/login.css',
-    //'/static/js/manifesto.js?v=1.0.6',
+    '/static/js/manifesto_v15.js',
+    '/static/css/bootstrap.min.css',
+    '/static/css/bootstrap-icons.css',
+    '/static/css/fonts/bootstrap-icons.woff',
+    '/static/css/fonts/bootstrap-icons.woff2',
+    '/static/js/offiline.js',
+    '/static/js/bootstrap.bundle.min.js',
     '/static/images/icon-160x160.png',
     '/static/images/icon-512x512.png'
 ];
 
-// Instalação: Abre o cache e guarda os arquivos
+// --- INSTALAÇÃO ---
 self.addEventListener('install', (event) => {
-    self.skipWaiting(); // Força a nova versão a assumir
+    self.skipWaiting(); 
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
+            console.log('✅ Cache instalado: ', CACHE_NAME);
             return cache.addAll(filesToCache);
         })
     );
 });
 
-// Ativação: Deleta QUALQUER cache que não seja a versão atual
+// --- ATIVAÇÃO ---
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((cacheNames) => {
             return Promise.all(
                 cacheNames.map((cacheName) => {
                     if (cacheName !== CACHE_NAME) {
-                        console.log('Deletando cache antigo:', cacheName);
+                        console.log('🗑️ Removendo cache antigo:', cacheName);
                         return caches.delete(cacheName);
                     }
                 })
             );
         })
     );
+    return self.clients.claim();
 });
 
-// Busca (Fetch): Tenta buscar na rede primeiro para ter dados novos, 
-// se falhar (offline), pega do cache.
+// --- BUSCA (FETCH) ---
+
 self.addEventListener('fetch', (event) => {
+    const url = new URL(event.request.url);
+
+    // ⛔ REGRA 1: Ignora requisições de LOGIN ou envio de dados (POST, PUT, DELETE)
+    // O Service Worker não deve tentar cachear o corpo de um POST.
+    if (event.request.method !== 'GET') {
+        return; 
+    }
+
+    // 2. APIs e DADOS DINÂMICOS: Rede Primeiro (Network First)
+    if (url.pathname.includes('/api/') || url.pathname.includes('/status/')) {
+        event.respondWith(
+            fetch(event.request).catch(() => caches.match(event.request))
+        );
+        return;
+    }
+
+    // 3. LAYOUT E ESTRUTURA: Stale-While-Revalidate (Cache-First com Update em silêncio)
     event.respondWith(
-        fetch(event.request).catch(() => {
-            return caches.match(event.request);
+        caches.match(event.request).then((cachedResponse) => {
+            const fetchPromise = fetch(event.request).then((networkResponse) => {
+                
+                // ✅ Verificação robusta antes de clonar
+                if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+                    return networkResponse;
+                }
+
+                // Clona para o cache
+                const responseToCache = networkResponse.clone();
+                caches.open(CACHE_NAME).then((cache) => {
+                    cache.put(event.request, responseToCache);
+                });
+
+                return networkResponse;
+            }).catch(() => {
+                // Silencia erros de rede para não travar o console
+            });
+
+            return cachedResponse || fetchPromise;
         })
     );
 });
 
-
-// --- LÓGICA DE NOTIFICAÇÕES (PUSH) ---
-
+// --- NOTIFICAÇÕES (PUSH) ---
 self.addEventListener('push', function (event) {
     let data = {};
-
-    // Evita erro se vier push sem payload
-    if (event.data) {
-        data = event.data.json();
-    }
+    if (event.data) { try { data = event.data.json(); } catch(e) { data.body = event.data.text(); } }
 
     const options = {
-        body: data.body || 'Você tem uma nova atualização',
+        body: data.body || 'Nova atualização no sistema',
         icon: data.icon || '/static/images/icon-160x160.png',
         badge: '/static/images/icon-160x160.png',
         vibrate: [200, 100, 200],
-        data: {
-            url: data.url || '/app/'
-        },
-        requireInteraction: true // notificação fica até o usuário interagir
+        data: { url: data.url || '/app/' },
+        requireInteraction: true 
     };
 
     event.waitUntil(
-        self.registration.showNotification(
-            data.title || 'Transportadora App',
-            options
-        )
+        self.registration.showNotification(data.title || 'Transportadora App', options)
     );
 });
 
-
-// --- Clique na notificação ---
-
+// --- CLIQUE NOTIFICAÇÃO ---
 self.addEventListener('notificationclick', function (event) {
     event.notification.close();
-
     const urlToOpen = event.notification.data.url || '/app/';
-
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true })
             .then(function (clientList) {
-                // Se já tiver o app aberto, foca nele
                 for (let client of clientList) {
                     if (client.url.includes('/app/') && 'focus' in client) {
                         return client.focus();
                     }
                 }
-                // Se não estiver aberto, abre uma nova aba
-                if (clients.openWindow) {
-                    return clients.openWindow(urlToOpen);
-                }
+                if (clients.openWindow) { return clients.openWindow(urlToOpen); }
             })
     );
 });

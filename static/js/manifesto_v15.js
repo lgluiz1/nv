@@ -2,9 +2,20 @@
 // =====================================================
 // CONFIGURAÇÕES E ESTADO GLOBAL
 // =====================================================
-const DB_NAME = 'FrotaDB';
-const DB_VERSION = 1;
+// 1. Definição da API_BASE caso ela não venha do Django/Template
+if (typeof API_BASE === 'undefined') {
+    window.API_BASE = window.location.origin + '/api/';
+}
 
+// 2. Definição segura do DB_NAME (Evita o erro de "already declared")
+if (typeof DB_NAME === 'undefined') {
+    window.DB_NAME = 'FrotaDB';
+}
+if (typeof DB_VERSION === 'undefined') {
+    window.DB_VERSION = 1;
+}
+
+// Use as variáveis sem o 'const' agora, pois elas já estão no escopo global (window)
 const ENDPOINTS = {
     busca: `${API_BASE}manifesto/busca/`,
     status: `${API_BASE}manifesto/status/`,
@@ -829,6 +840,8 @@ async function salvarRegistro() {
         if (response.ok) {
             atualizarStatusUI('success', '✅ Registro Cadastrado!', 'A baixa foi realizada com sucesso.');
             processarSumiçoNota(numeroNF);
+            atualizarListaViva(manifestoAtual); // Atualiza a lista para refletir a baixa (opcional, pois o polling já cuida disso)
+
         } else {
             // Se o servidor retornar erro controlado (ex: 400 - Validação)
             if (data.status_integracao === 'erro_tms') {
@@ -871,7 +884,7 @@ async function salvarRegistro() {
             atualizarStatusUI('warning', '📡 Modo Offline Ativado', 'O sinal oscilou. Sua baixa foi guardada no celular e será enviada assim que o sinal voltar.');
             
             processarSumiçoNota(numeroNF);
-
+            atualizarListaViva(manifestoAtual);
         } catch (dbErr) {
             console.error("Erro crítico ao salvar no DB interno:", dbErr);
             atualizarStatusUI('error', '❌ Erro de Sistema', 'Não foi possível salvar offline.');
@@ -1609,6 +1622,7 @@ async function confirmarTransferenciaIndividual(numeroNota, chave) {
         executarBaixaOp(chave, 'TRANSFERENCIA', true);
     }
 }
+
 
 // =====================================================
 // LOADING NOVO CARREGAMENTO
