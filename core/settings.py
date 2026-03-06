@@ -19,7 +19,7 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,0.0.0.0,').split(',')
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://5f46abb1c539.ngrok-free.app',
+    'https://be81-191-241-65-196.ngrok-free.app',
 ]
 
 # Application definition
@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     #'manifesto',   # CORREÇÃO: Deve ser 'manifestos' (plural)
     'mobile',
     'operacional',
+    'AgenteIa',
 ]
 # Configurar Redis como channel layer
 # settings.py ou celery.py
@@ -137,8 +138,8 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        #'NAME': 'st63136_dev_app_transportadora',
-        'NAME': 'st63136_entregas_quickdelivery',
+        'NAME': 'st63136_dev_app_transportadora',
+        #'NAME': 'st63136_entregas_quickdelivery',
         'USER': 'st63136_quickdelivery',
         'PASSWORD': 'Qu1ck.2026',
         'HOST': 'st63136.ispot.cc',  # 👈 DEVE SER O DOMÍNIO OU IP DA INTERSERVER
@@ -298,3 +299,6 @@ if not DEBUG: # Ou remova o 'if' se quiser testar no ngrok agora
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+
+
+WHITENOISE_MANIFEST_STRICT = False

@@ -71,7 +71,27 @@ services:
     restart: always
 
 
-
+# 6. Worker Especializado para IA (YOLO + OCR)
+  celery_worker_ai:
+    build: .
+    container_name: transportadora_celery_ai
+    # Usamos uma fila específica (-Q ai_queue) e o pool 'solo' para evitar crashes (SIGILL) do PyTorch/OpenCV no Celery
+    command: celery -A core worker -l info -Q ai_queue --pool=solo --concurrency=1
+    volumes:
+      - .:/transportadora_backend
+      - media_data:/transportadora_backend/media
+    env_file:
+      - .env
+    environment:
+      - OMP_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - VECLIB_MAXIMUM_THREADS=1
+      - NUMEXPR_NUM_THREADS=1
+    depends_on:
+      - redis
+      - db
+    restart: always
 
 volumes:
   postgres_data:

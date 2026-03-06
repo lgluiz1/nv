@@ -22,14 +22,23 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     graphviz \
     libgraphviz-dev \
-    pkg-config \
-    # Limpa o cache
+    # --- DEPENDÊNCIAS CORRIGIDAS PARA AGENTE IA (OpenCV & EasyOCR/Tesseract) ---
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    tesseract-ocr \
+    tesseract-ocr-por \
+    # ----------------------------------------------------------------
     && rm -rf /var/lib/apt/lists/*
 
 # Copia e instala as dependências Python
 COPY requirements.txt /transportadora_backend/
 RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+
+# Nota: Instalar o torch e ultralytics pode demorar um pouco no build
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia o código da aplicação
 COPY . /transportadora_backend/

@@ -102,14 +102,21 @@ class RegistrarBaixaView(APIView):
                 nf.save()
                 
                 # --- DISPARO DA TASK CORRETA (O CÉREBRO) ---
-                if nf.chave_acesso:
-                    # Se for NF-e normal, usa o endpoint de chaves
-                    enviar_baixa_esl_task.delay(baixa.id)
-                    msg_log = "NF-e enviada para Task padrão."
+                if ocorrencia.codigo_tms in ['1', '01', '2', '02']:
+                    # Ocorrências 1/01 e 2/02: Vai para o fluxo do Agente IA (YOLO) primeiro
+                    from AgenteIa.tasks import task_processar_canhoto_ia
+                    task_processar_canhoto_ia.delay(baixa.id)
+                    msg_log = "Enviada para processamento no Agente IA (YOLO) (Task Ativa)."
                 else:
-                    # Se for Minuta (sem chave), usa o endpoint de fretes (v1/freights)
-                    enviar_baixa_minuta_task.delay(baixa.id)
-                    msg_log = "Minuta enviada para Task de Fretes."
+                    # Demais ocorrências: Fluxo normal e direto para o TMS
+                    if nf.chave_acesso:
+                        # Se for NF-e normal, usa o endpoint de chaves
+                        enviar_baixa_esl_task.delay(baixa.id) # Descomentar para enviar NFE ao TMS
+                        msg_log = "NF-e agendada para TMS."
+                    else:
+                        # Se for Minuta (sem chave), usa o endpoint de fretes (v1/freights)
+                        enviar_baixa_minuta_task.delay(baixa.id) # Descomentar para enviar Minuta ao TMS
+                        msg_log = "Minuta agendada para TMS."
                 
                 print(f"BAIXA REGISTRADA: {msg_log} (Retida: {is_retida})")
 

@@ -1,5 +1,5 @@
 from django.apps import AppConfig
-
+# manifesto/apps.py
 
 class ManifestoConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'

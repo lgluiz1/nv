@@ -511,6 +511,12 @@ class MotoristasPerformanceView(LoginRequiredMixin, ListView):
                 'manifestos__notas_fiscais', 
                 filter=filtros_periodo & Q(manifestos__notas_fiscais__baixa_info__ocorrencia__codigo_tms='20')
             ),
+            # pega todas as notas com status de pendente 
+            baixas_pendentes=Count(
+                'manifestos__notas_fiscais', 
+                distinct=True,
+                filter=filtros_periodo & Q(manifestos__notas_fiscais__status='PENDENTE')
+            ),
 
             total_notas_geral=Count(
                 'manifestos__notas_fiscais', 

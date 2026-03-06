@@ -237,7 +237,7 @@ class BaixaNF(models.Model):
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     integrado_tms = models.BooleanField(default=False, null=True, blank=True, verbose_name="Integrado ESL")
-    
+    payload_enviado = models.JSONField(null=True, blank=True, verbose_name="JSON enviado para ESL")
 
     def __str__(self):
         return f"Baixa de {self.nota_fiscal.numero_nota} ({self.tipo})"

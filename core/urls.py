@@ -14,6 +14,7 @@ urlpatterns = [
     path('api/', include(('manifesto.urls', 'manifesto'), namespace='manifesto')),
     path('app/', include(('mobile.urls', 'mobile'), namespace='mobile')),
     path('', include(('operacional.urls', 'operacional'), namespace='operacional')),
+    path('ia/', include(('AgenteIa.urls', 'AgenteIa'), namespace='AgenteIa')),
     # Whatsapp Bot URLs
     #path('botwhatsapp/', include(('botWhatsapp.urls', 'botWhatsapp'), namespace='botWhatsapp')),
     path('', include('pwa.urls')),
