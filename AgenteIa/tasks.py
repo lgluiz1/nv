@@ -131,9 +131,9 @@ def finalizar_fluxo_tms(baixa):
     """Dispara a integração final com o delay necessário"""
     if baixa.nota_fiscal.chave_acesso:
         # Descomentar a linha abaixo quando for subir pro Git / Produção
-        enviar_baixa_esl_task.apply_async(args=[baixa.id], countdown=2)
+        #enviar_baixa_esl_task.apply_async(args=[baixa.id], countdown=2)
         print(f"TMS: Fluxo de baixa de NF-e {baixa.nota_fiscal.chave_acesso} despachado.")
     else:
         # Descomentar a linha abaixo quando for subir pro Git / Produção
-        enviar_baixa_minuta_task.apply_async(args=[baixa.id], countdown=2)
+        #enviar_baixa_minuta_task.apply_async(args=[baixa.id], countdown=2)
         print(f"TMS: Fluxo de baixa de Minuta {baixa.nota_fiscal.numero_nota} despachado.")

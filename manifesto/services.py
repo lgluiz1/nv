@@ -15,18 +15,41 @@ def enviar_painel(manifesto):
 
     remover = manifesto.status != 'EM_TRANSPORTE'
     print("WS ENVIANDO -> TOTAL:", total, "BAIXADAS:", baixadas)
+
+    from django.utils.timezone import localtime
     
-    async_to_sync(channel_layer.group_send)(
-        "painel_monitoramento",
-        {
-            "type": "atualizar_painel",
-            "data": {
-                "manifesto_id": str(manifesto.numero_manifesto),
-                "baixadas": baixadas,
-                "porcentagem": porcentagem,
-                "motorista_nome": manifesto.motorista.nome_completo,
-                "remover": remover,
-                "total": total_notas, 
-            }
+    # Converte o horário do banco (UTC) para o fuso horário configurado no Django (ex: America/Sao_Paulo)
+    data_registro_local = localtime(manifesto.data_criacao)
+    data_registro = data_registro_local.strftime('%d/%m/%Y %H:%M')
+    
+    from django.utils.text import slugify
+    
+    # Define o grupo da filial usando o slug do nome (trata caracteres como acentos/espaços)
+    nome_filial = manifesto.filial.nome if manifesto.filial else "todas"
+    grupo_filial = f"painel_monitoramento_{slugify(nome_filial)}"
+    
+    payload = {
+        "type": "atualizar_painel",
+        "data": {
+            "manifesto_id": str(manifesto.numero_manifesto),
+            "baixadas": baixadas,
+            "porcentagem": porcentagem,
+            "motorista_nome": manifesto.motorista.nome_completo if manifesto.motorista else "Desconhecido",
+            "remover": remover,
+            "total": total_notas, 
+            "data_registro": data_registro
         }
+    }
+    
+    # Envia para a filial específica
+    async_to_sync(channel_layer.group_send)(
+        grupo_filial,
+        payload
     )
+    
+    # Se não for "todas", envia também para o painel geral
+    if grupo_filial != "painel_monitoramento_todas":
+        async_to_sync(channel_layer.group_send)(
+            "painel_monitoramento_todas",
+            payload
+        )

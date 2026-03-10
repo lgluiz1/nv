@@ -248,19 +248,30 @@ def buscar_manifesto_completo_task(self, log_id):
         }
         
         res_valida = requests.get(url_valida, headers=headers_geral, data=json.dumps(payload_busca), timeout=30)
-        dados_mft = res_valida.json()
         
+        try:
+            dados_mft = res_valida.json()
+        except json.JSONDecodeError:
+            log.status, log.mensagem_erro = 'ERRO', f"Erro de comunicação com o TMS (API retornou {res_valida.status_code})"
+            log.save()
+            return
+            
         if not dados_mft:
-            log.status, log.mensagem_erro = 'ERRO', "Manifesto não encontrado."
-            log.save(); return
+            log.status, log.mensagem_erro = 'ERRO', "Manifesto não encontrado no TMS."
+            log.save()
+            return
 
         info_tms = dados_mft[0]
 
         # Validação de CPF
-        cpf_tms = str(info_tms.get('mft_mdr_iil_document', '')).strip()
-        if cpf_tms != str(motorista.cpf).replace('.','').replace('-',''):
-            log.status, log.mensagem_erro = 'ERRO', "Manifesto não pertence ao seu CPF."
-            log.save(); return
+        cpf_tms = str(info_tms.get('mft_mdr_iil_document', '')).strip().replace('.','').replace('-','')
+        cpf_motorista = str(motorista.cpf).strip().replace('.','').replace('-','')
+        
+        if cpf_tms != cpf_motorista:
+            log.status = 'ERRO'
+            log.mensagem_erro = "O CPF vinculado a este manifesto no TMS não coincide com o CPF do motorista selecionado."
+            log.save()
+            return
 
         # Lógica de Filial
         nome_filial_tms = info_tms.get('mft_crn_psn_nickname', 'MATRIZ').strip().upper()
@@ -326,7 +337,9 @@ def buscar_manifesto_completo_task(self, log_id):
             time.sleep(1.5)
 
         # --- ETAPA 3: ENRIQUECIMENTO OU CADASTRO PADRÃO (MINUTAS) ---
-        # --- ETAPA 3: ENRIQUECIMENTO OU CADASTRO PADRÃO (MINUTAS) ---
+        log.quantidade_notas = len(notas_unicas_dict)
+        log.save()
+        
         total_processadas = 0
         for id_doc, dados_base in notas_unicas_dict.items():
             try:

@@ -215,9 +215,9 @@ CELERY_TIMEZONE = TIME_ZONE
 # --- Configurações Django REST Framework ---
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        # Usa JWT como método primário de autenticação
         'rest_framework_simplejwt.authentication.JWTAuthentication', 
         'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication', # Adicionado para suportar login via painel (Sessão)
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         # Exige autenticação por padrão (pode ser sobrescrito nas Views)

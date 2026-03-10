@@ -47,6 +47,16 @@ class Motorista(models.Model):
         verbose_name="Foto de Perfil"
     )
 
+    # NOVO: Vínculo do usuário com a Filial (Para filtro operacional automatizado)
+    filial = models.ForeignKey(
+        'Filial',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='usuarios_vinculados',
+        verbose_name="Filial de Vínculo"
+    )
+
     def __str__(self):
         return self.nome_completo
 

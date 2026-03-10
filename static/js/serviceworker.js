@@ -1,5 +1,5 @@
 // UNIFICADO: Versão v1.26 (Corrigida para evitar erro de Clone/POST)
-const CACHE_NAME = 'fluxo-logistica-v1.26'; 
+const CACHE_NAME = 'fluxo-logistica-v1.29';//27
 
 const filesToCache = [
     '/app/',
@@ -19,7 +19,7 @@ const filesToCache = [
 
 // --- INSTALAÇÃO ---
 self.addEventListener('install', (event) => {
-    self.skipWaiting(); 
+    self.skipWaiting();
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
             console.log('✅ Cache instalado: ', CACHE_NAME);
@@ -53,7 +53,7 @@ self.addEventListener('fetch', (event) => {
     // ⛔ REGRA 1: Ignora requisições de LOGIN ou envio de dados (POST, PUT, DELETE)
     // O Service Worker não deve tentar cachear o corpo de um POST.
     if (event.request.method !== 'GET') {
-        return; 
+        return;
     }
 
     // 2. APIs e DADOS DINÂMICOS: Rede Primeiro (Network First)
@@ -68,7 +68,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
             const fetchPromise = fetch(event.request).then((networkResponse) => {
-                
+
                 // ✅ Verificação robusta antes de clonar
                 if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
                     return networkResponse;
@@ -93,7 +93,7 @@ self.addEventListener('fetch', (event) => {
 // --- NOTIFICAÇÕES (PUSH) ---
 self.addEventListener('push', function (event) {
     let data = {};
-    if (event.data) { try { data = event.data.json(); } catch(e) { data.body = event.data.text(); } }
+    if (event.data) { try { data = event.data.json(); } catch (e) { data.body = event.data.text(); } }
 
     const options = {
         body: data.body || 'Nova atualização no sistema',
@@ -101,7 +101,7 @@ self.addEventListener('push', function (event) {
         badge: '/static/images/icon-160x160.png',
         vibrate: [200, 100, 200],
         data: { url: data.url || '/app/' },
-        requireInteraction: true 
+        requireInteraction: true
     };
 
     event.waitUntil(

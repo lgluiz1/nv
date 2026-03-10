@@ -1,5 +1,6 @@
 const ws_scheme = window.location.protocol === "https:" ? "wss" : "ws";
-const ws_url = ws_scheme + "://" + window.location.host + "/ws/painel-logistico/";
+const filialPrefix = window.FILIAL_ATIVA || 'todas';
+const ws_url = ws_scheme + "://" + window.location.host + "/ws/painel-logistico/" + filialPrefix + "/";
 
 let socket;
 
@@ -37,6 +38,7 @@ function conectarWebSocket() {
         const baixadas = data.dados.baixadas || 0;
         const percent = data.dados.porcentagem || 0;
         const motorista = data.dados.motorista_nome || "Motorista";
+        const data_registro = data.dados.data_registro || "--/--/---- --:--";
 
         const novoCard = `
         <div class="col-12 col-md-6 col-lg-4 col-xl-3" id="card-mft-${mID}">
@@ -56,6 +58,9 @@ function conectarWebSocket() {
                         <div class="ms-3">
                             <h6 class="mb-0 fw-bold">${motorista}</h6>
                             <small class="text-muted">Manifesto: #${mID}</small>
+                            <small class="text-muted d-block mt-1" id="data-registro-${mID}">
+                                <i class="bi bi-clock pe-1"></i>${data_registro}
+                            </small>
                         </div>
                     </div>
 

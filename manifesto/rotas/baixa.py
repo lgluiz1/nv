@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from manifesto.models import NotaFiscal, BaixaNF, Ocorrencia
 from django.db import transaction
+from django.utils import timezone
 from manifesto.tasks import enviar_baixa_esl_task, enviar_baixa_minuta_task
 from ftplib import FTP
 from io import BytesIO
@@ -57,19 +58,22 @@ class RegistrarBaixaView(APIView):
             with transaction.atomic():
                 # --- BUSCA INTELIGENTE (HÍBRIDA) ---
                 filtros = {}
+                nota_id = request.data.get('nota_id')
                 
-                # Se tem chave, busca pela chave. Se não, busca pelo número (Minuta)
-                if chave_acesso and chave_acesso != "null" and chave_acesso != "":
+                if nota_id:
+                    filtros['id'] = nota_id
+                elif chave_acesso and chave_acesso != "null" and chave_acesso != "":
                     filtros['chave_acesso'] = chave_acesso
                 else:
                     filtros['numero_nota'] = numero_nota
 
-                # Vincula ao manifesto correto
-                if numero_mft:
-                    filtros['manifesto__numero_manifesto'] = str(numero_mft)
-                else:
-                    filtros['manifesto__motorista__user'] = request.user
-                    filtros['manifesto__status'] = 'EM_TRANSPORTE'
+                # Vincula ao manifesto correto (Só aplica filtros de segurança se NÃO for via ID direto)
+                if not nota_id:
+                    if numero_mft:
+                        filtros['manifesto__numero_manifesto'] = str(numero_mft)
+                    else:
+                        filtros['manifesto__motorista__user'] = request.user
+                        filtros['manifesto__status'] = 'EM_TRANSPORTE'
 
                 # Tenta encontrar a nota ou minuta
                 nf = NotaFiscal.objects.get(**filtros)
@@ -85,6 +89,8 @@ class RegistrarBaixaView(APIView):
                     url_final_foto = upload_via_ftp(foto_arquivo.read(), nome_arquivo)
 
                 # --- REGISTRO DA BAIXA ---
+                data_manual = request.data.get('data_baixa')
+                
                 baixa, created = BaixaNF.objects.update_or_create(
                     nota_fiscal=nf,
                     defaults={
@@ -94,7 +100,8 @@ class RegistrarBaixaView(APIView):
                         'recebedor': request.data.get('recebedor') if not is_retida else "NÃO INFORMADO",
                         'latitude': request.data.get('latitude'),
                         'longitude': request.data.get('longitude'),
-                        'observacao': observacao_app if is_retida else request.data.get('observacao', '')
+                        'observacao': observacao_app if is_retida else request.data.get('observacao', ''),
+                        'data_baixa': data_manual if data_manual else (baixa.data_baixa if not created else timezone.now())
                     }
                 )
 
@@ -111,11 +118,11 @@ class RegistrarBaixaView(APIView):
                     # Demais ocorrências: Fluxo normal e direto para o TMS
                     if nf.chave_acesso:
                         # Se for NF-e normal, usa o endpoint de chaves
-                        enviar_baixa_esl_task.delay(baixa.id) # Descomentar para enviar NFE ao TMS
+                        #enviar_baixa_esl_task.delay(baixa.id) # Descomentar para enviar NFE ao TMS
                         msg_log = "NF-e agendada para TMS."
                     else:
                         # Se for Minuta (sem chave), usa o endpoint de fretes (v1/freights)
-                        enviar_baixa_minuta_task.delay(baixa.id) # Descomentar para enviar Minuta ao TMS
+                        #enviar_baixa_minuta_task.delay(baixa.id) # Descomentar para enviar Minuta ao TMS
                         msg_log = "Minuta agendada para TMS."
                 
                 print(f"BAIXA REGISTRADA: {msg_log} (Retida: {is_retida})")
@@ -123,8 +130,11 @@ class RegistrarBaixaView(APIView):
             return Response({'status': 'sucesso', 'mensagem': 'Baixa registrada e integração iniciada!'})
 
         except NotaFiscal.DoesNotExist:
-            id_err = chave_acesso if chave_acesso else numero_nota
-            return Response({'erro': f'Documento {id_err} não encontrado no manifesto {numero_mft}.'}, status=404)
+            id_err = nota_id if nota_id else (chave_acesso if chave_acesso else numero_nota)
+            msg_exc = f"Documento {id_err} não localizado"
+            if numero_mft:
+                msg_exc += f" no manifesto {numero_mft}"
+            return Response({'erro': msg_exc + "."}, status=404)
         except Exception as e:
             print(f"ERRO NA BAIXA: {str(e)}") 
             return Response({'erro': str(e)}, status=400)

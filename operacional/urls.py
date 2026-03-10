@@ -21,8 +21,15 @@ urlpatterns = [
     path('api/manifesto/detalhes-modal/<int:manifesto_id>/', views.detalhes_manifesto_modal_view, name='detalhes_manifesto_modal'),
     path('api/manifesto/editar-modal/<int:manifesto_id>/', views.editar_manifesto_modal_view, name='editar_manifesto_modal'),
     path('api/manifesto/salvar-edicao/<int:manifesto_id>/', views.salvar_edicao_manifesto_view, name='salvar_edicao_manifesto'),
+    path('api/manifesto/sincronizar/<int:manifesto_id>/', views.sincronizar_manifesto_operacional_view, name='sincronizar_manifesto_operacional'),
+    path('api/manifesto/deletar/<int:manifesto_id>/', views.deletar_manifesto_operacional_view, name='deletar_manifesto_operacional'),
     path('motoristas/', MotoristasPerformanceView.as_view(), name='motoristas'),
     path('motoristas/cadastrar/', views.motorista_cadastrar, name='motorista_cadastrar'),
     path('motoristas/editar/', views.motorista_editar, name='motorista_editar'),
     path('api/rastreio/<int:manifesto_id>/', api_rastreio_manifesto, name='api_rastreio_manifesto'),
+
+    # Central de Ajuda
+    path('suporte/', views.SuporteView.as_view(), name='suporte'),
+    path('treinamentos/', views.TreinamentosView.as_view(), name='treinamentos'),
+    path('central-ajuda/', views.CentralAjudaView.as_view(), name='central_ajuda'),
 ]

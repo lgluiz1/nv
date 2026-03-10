@@ -2,6 +2,6 @@ from django.urls import re_path
 from . import consumers
 
 websocket_urlpatterns = [
-    # O correto para Channels é .as_asgi()
-    re_path(r'ws/painel-logistico/$', consumers.MonitoramentoConsumer.as_asgi()),
+    # Aceita uma filial_id alfanumerica com hifens (slug) ou a string literar 'todas'
+    re_path(r'ws/painel-logistico/(?:(?P<filial_id>[\w\-]+)/)?$', consumers.MonitoramentoConsumer.as_asgi()),
 ]

@@ -6,9 +6,16 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 
 class MonitoramentoConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        self.group_name = "painel_monitoramento"
-        print(">>> CONSUMER CONECTADO")
-        # Entra no grupo do painel
+        # Tenta pegar o filial_id passado na URL do WebSockets; se não tiver, default para "todas"
+        if 'filial_id' in self.scope['url_route']['kwargs'] and self.scope['url_route']['kwargs']['filial_id']:
+            self.filial_id = self.scope['url_route']['kwargs']['filial_id']
+        else:
+            self.filial_id = 'todas'
+            
+        self.group_name = f"painel_monitoramento_{self.filial_id}"
+        
+        print(f">>> CONSUMER CONECTADO - Grupo: {self.group_name}")
+        # Entra no grupo específico do painel
         await self.channel_layer.group_add(
             self.group_name,
             self.channel_name

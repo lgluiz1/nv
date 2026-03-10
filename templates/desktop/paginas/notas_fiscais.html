@@ -102,6 +102,12 @@
                                     <i class="bi bi-eye"></i>
                                 </button>
                                 
+                                {% if nota.status == 'PENDENTE' %}
+                                <button class="btn btn-sm btn-warning" onclick="abrirModalBaixa('{{ nota.id }}', '{{ nota.numero_nota }}')" title="Registrar Baixa Manual">
+                                    <i class="bi bi-journal-plus"></i>
+                                </button>
+                                {% endif %}
+                                
                                 {% with baixa=nota.baixa_info.all.last %}
         
         {# CASO 1: Já está integrado com sucesso - Mostra Ícone Positivo #}
@@ -141,6 +147,9 @@
     </div>
 </div>
 
+</div>
+
+<!-- Modal Detalhes Nota -->
 <div class="modal fade " id="modalNota" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
@@ -150,16 +159,78 @@
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            
-            <div class="modal-body p-0" id="conteudoModal">
-                </div>
-
+            <div class="modal-body p-0" id="conteudoModal"></div>
             <div class="modal-footer border-top-0">
                 <button type="button" class="btn btn-secondary fw-bold" data-bs-dismiss="modal">Fechar</button>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Modal Registrar Baixa Manual -->
+<div class="modal fade" id="modalRegistrarBaixa" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-journal-plus me-2"></i>Registrar Baixa Manual
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="formBaixaManual">
+                    <input type="hidden" id="baixaNotaId">
+                    
+                    <div class="mb-3 bg-light p-2 rounded border text-center">
+                        <small class="text-muted d-block uppercase fw-bold">NF-e Selecionada</small>
+                        <span class="fs-5 fw-bold text-primary" id="baixaNumeroNfe"></span>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-12">
+                            <label class="form-label small fw-bold">Data e Hora da Entrega</label>
+                            <input type="datetime-local" id="baixaData" class="form-control" required>
+                            <div class="form-text mt-0" style="font-size: 0.75rem;">Informe a data real em que o motorista realizou a entrega.</div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Tipo de Ocorrência</label>
+                        <select id="baixaOcorrencia" class="form-select" required>
+                            <option value="">-- Selecione --</option>
+                            {% for oc in ocorrencias %}
+                                <option value="{{ oc.codigo_tms }}">{{ oc.descricao }} ({{ oc.codigo_tms }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Nome do Recebedor (Opcional)</label>
+                        <input type="text" id="baixaRecebedor" class="form-control" placeholder="Quem recebeu a mercadoria?">
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label small fw-bold">Comprovante / Foto</label>
+                        <input type="file" id="baixaArquivo" class="form-control" accept="image/*" capture="environment">
+                        <div class="form-text" style="font-size: 0.75rem;">Anexe a foto do canhoto assinado.</div>
+                    </div>
+
+                    <div id="baixaFeedback" class="alert alert-danger d-none py-2 small"></div>
+
+                    <button type="button" class="btn btn-primary w-100 py-2 fw-bold" onclick="enviarBaixaManual()">
+                        <i class="bi bi-check-circle me-2"></i>CONFIRMAR REGISTRO
+                    </button>
+                </form>
+
+                <div id="baixaLoading" class="text-center py-4 d-none">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 mb-0 fw-bold">Processando registro...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 
 <div class="modal fade" id="modalImportarNfe" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-dialog-centered">
@@ -385,7 +456,84 @@ function abrirDetalhes(notaId) {
         `;
     });
 }
+
+/**
+ * Funções para Registro de Baixa Manual
+ */
+function abrirModalBaixa(notaId, numeroNfe) {
+    document.getElementById('baixaNotaId').value = notaId;
+    document.getElementById('baixaNumeroNfe').innerText = `NF: ${numeroNfe}`;
+    
+    // Define a data/hora atual no campo como padrão
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    document.getElementById('baixaData').value = now.toISOString().slice(0, 16);
+    
+    // Reseta form
+    document.getElementById('formBaixaManual').classList.remove('d-none');
+    document.getElementById('baixaLoading').classList.add('d-none');
+    document.getElementById('baixaFeedback').classList.add('d-none');
+    
+    const modal = new bootstrap.Modal(document.getElementById('modalRegistrarBaixa'));
+    modal.show();
+}
+
+function enviarBaixaManual() {
+    const notaId = document.getElementById('baixaNotaId').value;
+    const dataOcorrencia = document.getElementById('baixaData').value;
+    const ocorrenciaCodigo = document.getElementById('baixaOcorrencia').value;
+    const recebedor = document.getElementById('baixaRecebedor').value;
+    const foto = document.getElementById('baixaArquivo').files[0];
+    const feedback = document.getElementById('baixaFeedback');
+
+    if (!dataOcorrencia || !ocorrenciaCodigo) {
+        feedback.innerText = "Data e Tipo de Ocorrência são obrigatórios.";
+        feedback.classList.remove('d-none');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('nota_id', notaId); // Mandamos o ID da nota
+    formData.append('data_baixa', dataOcorrencia);
+    formData.append('ocorrencia_codigo', ocorrenciaCodigo);
+    formData.append('recebedor', recebedor);
+    if (foto) formData.append('foto', foto);
+
+    // O RegistrarBaixaView do PWA usa 'chave_acesso', mas vamos adaptar para aceitar 'nota_id' se preferir, 
+    // ou apenas buscar a chave antes de mandar. 
+    // Como a RegistrarBaixaView (manifesto/rotas/baixa.py) busca por filtros, 
+    // vou garantir que ela suporte o que mandarmos.
+
+    document.getElementById('formBaixaManual').classList.add('d-none');
+    document.getElementById('baixaLoading').classList.remove('d-none');
+
+    fetch('/api/manifesto/registrar-baixa/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'sucesso') {
+            location.reload();
+        } else {
+            document.getElementById('formBaixaManual').classList.remove('d-none');
+            document.getElementById('baixaLoading').classList.add('d-none');
+            feedback.innerText = data.erro || "Erro ao registrar.";
+            feedback.classList.remove('d-none');
+        }
+    })
+    .catch(error => {
+        document.getElementById('formBaixaManual').classList.remove('d-none');
+        document.getElementById('baixaLoading').classList.add('d-none');
+        feedback.innerText = "Erro de conexão.";
+        feedback.classList.remove('d-none');
+    });
+}
 </script>
+
 <script src="{% static 'desktop/js/nota_fiscal.js' %}"></script>
 
 {% endblock %}

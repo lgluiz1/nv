@@ -42,8 +42,9 @@ class ManifestoBuscaLog(models.Model):
 
     # ✅ AGORA CORRETO
     payload = models.JSONField(blank=True, null=True)
-
+    quantidade_notas = models.IntegerField(default=0, verbose_name="Quantidade de Notas")
     criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"Busca {self.numero_manifesto} - {self.motorista.nome_completo} - {self.status}"
@@ -230,7 +231,7 @@ class BaixaNF(models.Model):
     recebedor = models.CharField(max_length=100, null=True, blank=True)
     documento_recebedor = models.CharField(max_length=20, null=True, blank=True)
     observacao = models.TextField(blank=True, null=True)
-    data_baixa = models.DateTimeField(auto_now_add=True)
+    data_baixa = models.DateTimeField(default=timezone.now)
     processado_tms = models.BooleanField(default=False, verbose_name="Integrado com ESL")
     data_integracao = models.DateTimeField(null=True, blank=True)
     log_erro_tms = models.TextField(null=True, blank=True, verbose_name="Log de Erro ESL")

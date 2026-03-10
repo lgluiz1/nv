@@ -1,6 +1,11 @@
 # manifesto/urls.py
 from django.urls import path
-from manifesto.rotas.busca import BuscarManifestoView
+from manifesto.rotas.busca import (
+    BuscarManifestoView,
+    ImportarManifestoAdminView,
+    CheckImportStatusView,
+    ListarTodosLogsView
+)
 from manifesto.rotas.status import StatusBuscaManifestoView
 from manifesto.rotas.iniciar_transporte import IniciarTransporteView
 from manifesto.rotas.init import AppInitView
@@ -32,6 +37,8 @@ urlpatterns = [
     path('manifesto/webhook/tms-esl/', webhook_tms_esl, name='webhook_tms_esl'),
     path('manifesto/ocorrencias/', ListarOcorrenciasView.as_view()),
     path('manifesto/baixa-operacional/', RegistrarBaixaOperacionalView.as_view()),
+    path('manifesto/importar-admin/', ImportarManifestoAdminView.as_view()),
+    path('manifesto/importar-status/<int:log_id>/', CheckImportStatusView.as_view(), name='importar_manifesto_status'),
+    path('manifesto/importar-logs/', ListarTodosLogsView.as_view(), name='listar_todos_logs'),
     path('painel/monitoramento/', painel_monitoramento, name='painel_monitoramento'),
-
 ]

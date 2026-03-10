@@ -8,7 +8,10 @@ class StatusBuscaManifestoView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        motorista = request.user.motorista_perfil
+        motorista = getattr(request.user, 'motorista_perfil', None)
+        if not motorista:
+            return Response({'erro': 'Usuário sem perfil de motorista.'}, status=403)
+
         numero = request.query_params.get('numero_manifesto')
 
         if not numero:

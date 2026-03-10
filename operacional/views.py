@@ -110,20 +110,32 @@ class DashboardView(TemplateView):
         hoje_inicio = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
         hoje_fim = hoje_inicio + timedelta(days=1)
 
-        # Pega nome e foto do usuario logado
+        # Pega nome, foto e FILIAL do usuario logado
         context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.last_name or self.request.user.username
         context['usuario_foto'] = ''
+        usuario_filial = None
+        
         try:
             perfil = Motorista.objects.get(user=self.request.user)
+            usuario_filial = perfil.filial
             if perfil.foto_perfil:
                 context['usuario_foto'] = perfil.foto_perfil.url
         except Motorista.DoesNotExist:
             pass
 
+        # Recupera parâmetro de filtro da URL
+        filial_param = self.request.GET.get('filial')
+
         # --- 1. CARDS DE RESUMO ---
-        # Filtramos manifestos do dia para basear as notas
         # 1. Busca os manifestos do dia
         manifestos_do_dia = Manifesto.objects.filter(data_criacao__range=(hoje_inicio, hoje_fim))
+        
+        # 2. Aplica filtro de Filial (Prioridade: URL param -> Perfil do Usuário -> Todas)
+        if filial_param and filial_param != 'todas':
+            manifestos_do_dia = manifestos_do_dia.filter(filial_id=filial_param)
+        elif not filial_param and usuario_filial:
+            manifestos_do_dia = manifestos_do_dia.filter(filial=usuario_filial)
+
         notas_do_dia = NotaFiscal.objects.filter(manifesto__in=manifestos_do_dia)
 
         # para filtrar as notas que pertencem aos manifestos ativos do dia
@@ -186,6 +198,11 @@ class DashboardView(TemplateView):
         
         context['titulo'] = "Painel de Controle Operacional"
         context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
+        
+        # Passar lista de filiais e filial ativa para o Dropdown no Frontend
+        context['filiais'] = Filial.objects.all().order_by('nome')
+        context['filial_selecionada'] = filial_param if filial_param else (str(usuario_filial.id) if usuario_filial else 'todas')
+        
         return context
 
 
@@ -199,6 +216,14 @@ class NotasFiscaisListView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
+        usuario_filial = None
+        if self.request.user.is_authenticated:
+            try:
+                perfil = Motorista.objects.get(user=self.request.user)
+                usuario_filial = perfil.filial
+            except Motorista.DoesNotExist:
+                pass
+
         # Inicia a query com todos os registros otimizados
         queryset = NotaFiscal.objects.select_related(
             'manifesto', 'manifesto__motorista'
@@ -214,6 +239,12 @@ class NotasFiscaisListView(TemplateView):
         manifesto = self.request.GET.get('manifesto')
         integrado = self.request.GET.get('integrado')
         data_inicio = self.request.GET.get('data_inicio')
+        filial_param = self.request.GET.get('filial')
+
+        if filial_param and filial_param != 'todas':
+            queryset = queryset.filter(manifesto__filial_id=filial_param)
+        elif not filial_param and usuario_filial:
+            queryset = queryset.filter(manifesto__filial=usuario_filial)
 
         if q:
             queryset = queryset.filter(
@@ -233,9 +264,14 @@ class NotasFiscaisListView(TemplateView):
         if data_inicio:
             queryset = queryset.filter(manifesto__data_criacao__date=data_inicio)
 
+        context['ocorrencias'] = Ocorrencia.objects.all().order_by('descricao')
         context['notas'] = queryset[:100] # Limitamos a 100 para performance
         context['titulo'] = "Gestão de Notas Fiscais"
         context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
+        
+        context['filiais'] = Filial.objects.all().order_by('nome')
+        context['filial_selecionada'] = filial_param if filial_param else (str(usuario_filial.id) if usuario_filial else 'todas')
+        
         return context
 
 from django.shortcuts import render, get_object_or_404
@@ -279,6 +315,14 @@ class ManifestosMonitoramentoView(ListView):
     paginate_by = 20
 
     def get_queryset(self):
+        usuario_filial = None
+        if self.request.user.is_authenticated:
+            try:
+                perfil = Motorista.objects.get(user=self.request.user)
+                usuario_filial = perfil.filial
+            except Motorista.DoesNotExist:
+                pass
+
         # Otimização: traz motorista e conta as notas em uma única query
         queryset = Manifesto.objects.select_related('motorista', 'filial').annotate(
             total_notas=Count('notas_fiscais'),
@@ -294,8 +338,10 @@ class ManifestosMonitoramentoView(ListView):
         motorista = self.request.GET.get('motorista')
         data_str = self.request.GET.get('data')
 
-        if filial_id:
+        if filial_id and filial_id != 'todas':
             queryset = queryset.filter(filial_id=filial_id)
+        elif not filial_id and usuario_filial:
+            queryset = queryset.filter(filial=usuario_filial)
         
         if numero:
             queryset = queryset.filter(numero_manifesto__icontains=numero)
@@ -326,14 +372,27 @@ class ManifestosMonitoramentoView(ListView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        
+        usuario_filial = None
+        if self.request.user.is_authenticated:
+            try:
+                perfil = Motorista.objects.get(user=self.request.user)
+                usuario_filial = perfil.filial
+            except Motorista.DoesNotExist:
+                pass
+                
         # Manter os valores dos filtros no contexto para o formulário não resetar
         context['filiais'] = Filial.objects.all().order_by('nome')
         context['titulo'] = "Monitoramento de Manifestos"
         context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
         
         # Opcional: passa os filtros atuais para o template (útil para manter o estado dos inputs)
+        filial_param = self.request.GET.get('filial')
+        context['filial_selecionada'] = filial_param if filial_param else (str(usuario_filial.id) if usuario_filial else 'todas')
         context['filtro_data'] = self.request.GET.get('data', '')
         context['filtro_numero'] = self.request.GET.get('numero', '')
+        context['motoristas_list'] = Motorista.objects.all().order_by('nome_completo')
+        context['ultimos_logs'] = ManifestoBuscaLog.objects.all().order_by('-atualizado_em')[:5]
         
         return context
     
@@ -449,6 +508,67 @@ def salvar_edicao_manifesto_view(request, manifesto_id):
             'success': False, 
             'message': f'Erro inesperado: {str(e)}'
         }, status=500)
+
+@login_required
+@require_POST
+def sincronizar_manifesto_operacional_view(request, manifesto_id):
+    """
+    Inicia a sincronização de um manifesto já existente via Painel Operacional.
+    """
+    from manifesto.models import ManifestoBuscaLog
+    from manifesto.tasks import buscar_manifesto_completo_task
+    
+    manifesto = get_object_or_404(Manifesto, id=manifesto_id)
+    
+    try:
+        # Se não tiver motorista, usa o usuário logado (opcional) ou não atrela
+        # A task buscar_manifesto_completo_task espera um log de busca com motorista.
+        # Se for o operacional forçando, talvez possamos usar o motorista do manifesto
+        motorista_vinculado = manifesto.motorista
+        
+        # Cria ou atualiza o log de busca
+        log, created = ManifestoBuscaLog.objects.update_or_create(
+            numero_manifesto=manifesto.numero_manifesto,
+            motorista=motorista_vinculado, # Pode ser None se o manifesto não tiver motorista
+            defaults={'status': 'AGUARDANDO', 'mensagem_erro': None}
+        )
+        
+        # Dispara a busca
+        buscar_manifesto_completo_task.delay(log.id)
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'A sincronização com o TMS foi iniciada no servidor.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': f'Erro ao iniciar sincronização: {str(e)}'
+        }, status=500)
+
+@login_required
+@require_POST
+def deletar_manifesto_operacional_view(request, manifesto_id):
+    """
+    Deleta totalmente o manifesto e suas dependências.
+    """
+    manifesto = get_object_or_404(Manifesto, id=manifesto_id)
+    
+    try:
+        nome_mft = manifesto.numero_manifesto
+        # Django apaga as NFs em cascata devido a on_delete=models.CASCADE 
+        # nas ForeignKey's referentes
+        manifesto.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Manifesto #{nome_mft} deletado permanentemente.'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': f'Houve um erro ao deletar: {str(e)}'
+        }, status=500)
     
 
 from datetime import datetime, time
@@ -467,8 +587,24 @@ class MotoristasPerformanceView(LoginRequiredMixin, ListView):
     login_url = '/login/'
 
     def get_queryset(self):
+        # Captura filial do usuário ativo
+        usuario_filial = None
+        if self.request.user.is_authenticated:
+            try:
+                perfil = Motorista.objects.get(user=self.request.user)
+                usuario_filial = perfil.filial
+            except Motorista.DoesNotExist:
+                pass
+                
         # 1. Base: Apenas quem é motorista
         queryset = Motorista.objects.filter(tipo_usuario='MOTORISTA')
+        
+        # Filtro de Filial
+        filial_param = self.request.GET.get('filial')
+        if filial_param and filial_param != 'todas':
+            queryset = queryset.filter(filial_id=filial_param)
+        elif not filial_param and usuario_filial:
+            queryset = queryset.filter(filial=usuario_filial)
 
         # 2. Captura datas do filtro
         data_inicio_str = self.request.GET.get('data_inicio')
@@ -539,10 +675,24 @@ class MotoristasPerformanceView(LoginRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        
+        usuario_filial = None
+        if self.request.user.is_authenticated:
+            try:
+                perfil = Motorista.objects.get(user=self.request.user)
+                usuario_filial = perfil.filial
+            except Motorista.DoesNotExist:
+                pass
+                
         context['titulo'] = 'Performance de Motoristas'
         context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
         context['data_inicio'] = self.request.GET.get('data_inicio', '')
         context['data_fim'] = self.request.GET.get('data_fim', '')
+        
+        filial_param = self.request.GET.get('filial')
+        context['filiais'] = Filial.objects.all().order_by('nome')
+        context['filial_selecionada'] = filial_param if filial_param else (str(usuario_filial.id) if usuario_filial else 'todas')
+        
         return context
     
 # WS PARA ATUALIZAR O PAINEL EM TEMPO REAL    
@@ -583,3 +733,38 @@ def motorista_editar(request):
         return JsonResponse({'success': True, 'message': 'Dados atualizados com sucesso!'})
     except Exception as e:
         return JsonResponse({'success': False, 'message': f'Erro ao editar: {str(e)}'})
+
+# --- VIEWS DA CENTRAL DE AJUDA ---
+
+@method_decorator(login_required(login_url='/login/'), name='dispatch')
+@method_decorator(apenas_operacional, name='dispatch')
+class SuporteView(TemplateView):
+    template_name = 'desktop/paginas/suporte.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['titulo'] = "Suporte Online"
+        context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
+        return context
+
+@method_decorator(login_required(login_url='/login/'), name='dispatch')
+@method_decorator(apenas_operacional, name='dispatch')
+class TreinamentosView(TemplateView):
+    template_name = 'desktop/paginas/treinamentos.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['titulo'] = "Treinamentos e Tutoriais"
+        context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
+        return context
+
+@method_decorator(login_required(login_url='/login/'), name='dispatch')
+@method_decorator(apenas_operacional, name='dispatch')
+class CentralAjudaView(TemplateView):
+    template_name = 'desktop/paginas/central_ajuda.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['titulo'] = "Central de Ajuda"
+        context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
+        return context

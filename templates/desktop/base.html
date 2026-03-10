@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root {
@@ -104,25 +105,42 @@
     </div>
     
     <div class="nav flex-column mt-2 flex-grow-1">
-        <a href="/dashboard/" class="nav-link active-menu">
+        <a href="/dashboard/" class="nav-link {% if request.path == '/dashboard/' %}active-menu{% endif %}">
             <i class="bi bi-grid-1x2"></i>
             <span class="menu-text">Dashboard</span>
         </a>
-        <a href="{% url 'operacional:notas_fiscais' %}" class="nav-link">
+        <a href="{% url 'operacional:notas_fiscais' %}" class="nav-link {% if request.path == '/notas-fiscais/' %}active-menu{% endif %}">
             <i class="bi bi-file-earmark-bar-graph"></i>
             <span class="menu-text">Notas Fiscais</span>
         </a>
-        <a href="{% url 'operacional:manifesto_detalhes' %}" class="nav-link">
+        <a href="{% url 'operacional:manifesto_detalhes' %}" class="nav-link {% if request.path == '/manifesto/' %}active-menu{% endif %}">
             <i class="bi bi-layers"></i>
             <span class="menu-text">Manifestos</span>
         </a>
-        <a href="{% url 'operacional:motoristas' %}" class="nav-link">
+        <a href="{% url 'operacional:motoristas' %}" class="nav-link {% if request.path == '/motoristas/' %}active-menu{% endif %}">
             <i class="bi bi-people"></i>
             <span class="menu-text">Motoristas</span>
         </a>
         <a href="#" class="nav-link">
             <i class="bi bi-bank"></i>
             <span class="menu-text">Financeiro</span>
+        </a>
+
+        <!-- Seção de Suporte -->
+        <div class="border-top border-secondary opacity-25 my-2"></div>
+        <small class="ms-4 menu-text d-block mb-1" style="font-size: 0.65rem; letter-spacing: 1px; color: #fff;">SUPORTE & AJUDA</small>
+        
+        <a href="{% url 'operacional:suporte' %}" class="nav-link {% if '/suporte/' in request.path %}active-menu{% endif %}">
+            <i class="bi bi-headset"></i>
+            <span class="menu-text">Suporte Online</span>
+        </a>
+        <a href="{% url 'operacional:treinamentos' %}" class="nav-link {% if '/treinamentos/' in request.path %}active-menu{% endif %}">
+            <i class="bi bi-play-circle"></i>
+            <span class="menu-text">Treinamentos</span>
+        </a>
+        <a href="{% url 'operacional:central_ajuda' %}" class="nav-link {% if '/central-ajuda/' in request.path %}active-menu{% endif %}">
+            <i class="bi bi-question-circle"></i>
+            <span class="menu-text">Central de Ajuda</span>
         </a>
     </div>
 

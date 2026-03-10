@@ -140,85 +140,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         forcarUpdatePWA();
         atualizarDadosHeader();
         verificarEstadoInicial();
-        // CHAME DIRETAMENTE AQUI (sem o addEventListener)
         carregarDadosCabecalho();
 
         const inputCamera = document.getElementById('camera-nativa');
         if (inputCamera) {
             inputCamera.addEventListener('change', handleCameraNativa);
         }
+
         // =====================================================
-        // FLUXO DE FINALIZAÇÃO DE MANIFESTO
+        // FLUXO DE FINALIZAÇÃO DE MANIFESTO (AUTOMÁTICO)
         // =====================================================
-        document.getElementById('finalizar-form-modal').addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const kmFinal = document.getElementById('km-final').value;
-            const msgDiv = document.getElementById('finalizar-message');
-            const submitBtn = e.target.querySelector('button[type="submit"]');
-            const modalBody = document.querySelector('#kmFinalModal .modal-body');
-            
-
-            const manifestoId = localStorage.getItem('manifesto_ativo') || 
-                        manifestoAtual || 
-                        document.getElementById('manifesto-id-display')?.innerText;
-            console.log("Tentando finalizar o Manifesto ID:", manifestoId);
-
-    if (!manifestoId) {
-        document.getElementById('finalizar-message').innerText = "Erro: Número do manifesto não identificado. Recarregue a página.";
-        return;
-    }
-
-            if (!kmFinal) {
-                msgDiv.innerText = "Por favor, insira a quilometragem.";
-                return;
-            }
-
-            // Desabilita o botão
-            submitBtn.disabled = true;
-            submitBtn.innerText = "Finalizando...";
-
-            try {
-                const response = await authFetch(`${API_BASE}manifesto/finalizar/`, {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        km_final: kmFinal,
-                        manifesto_id: manifestoId // Enviando o ID específico
-                    })
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    // SUCESSO: Transforma o conteúdo do modal
-                    modalBody.innerHTML = `
-                <div class="text-center p-4 animate__animated animate__zoomIn">
-                    <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
-                    <h4 class="mt-3 fw-bold">Obrigado!</h4>
-                    <p class="text-muted">Manifesto finalizado com sucesso.</p>
-                    <div class="badge bg-light text-dark border p-2">Sincronizando com o sistema...</div>
-                </div>
-            `;
-
-                    // Aguarda 3 segundos para o motorista ver a mensagem e recarrega
-                    setTimeout(() => {
-                        localStorage.removeItem('manifesto_ativo');
-                        window.location.reload();
-                    }, 3000);
-
-                } else {
-                    // Erro vindo da View
-                    msgDiv.innerText = data.mensagem || "Erro ao finalizar.";
-                    submitBtn.disabled = false;
-                    submitBtn.innerText = "Confirmar e Finalizar";
-                }
-            } catch (err) {
-                console.error("Erro no fechamento:", err);
-                msgDiv.innerText = "Falha na conexão com o servidor.";
-                submitBtn.disabled = false;
-                submitBtn.innerText = "Confirmar e Finalizar";
-            }
-        });
+        // A rotina de finalização agora é automática e chamada por fora quando a última nota é baixada.
     } else {
         window.location.href = LOGIN_URL;
     }
@@ -534,10 +466,9 @@ function atualizarVisualContadores(contador, notas, totalFinalizadas) {
     html += `</div>`;
     contador.innerHTML = html;
 
-    // Se tudo foi entregue, mostra o modal do KM
+    // Se tudo foi entregue, chama a finalização automática
     if (notas.length > 0 && totalFinalizadas === notas.length) {
-        const modalKM = new bootstrap.Modal(document.getElementById('kmFinalModal'));
-        setTimeout(() => { modalKM.show(); }, 800);
+        finalizarManifestoAutomatico();
     }
 }
 // =====================================================
@@ -606,7 +537,7 @@ function renderSearchScreen(message = null, type = 'info') {
     const alertHTML = message ? `<div class="alert alert-${type === 'error' ? 'danger' : 'info'} animate__animated animate__shakeX w-100 mb-3">${message}</div>` : '';
 
     content.innerHTML = `
-        <div class="search-container-card animate__animated animate__fadeIn">
+        <div class="search-container-card animate__animated animate__fadeIn flex-grow-1 w-100">
             <div class="card shadow border-0 p-4" style="border-radius: 20px;">
                 <div class="text-center mb-4">
                     <i class="bi bi-truck text-primary" style="font-size: 2.5rem;"></i>
@@ -728,7 +659,7 @@ function atualizarContadorVisual() {
 }
 
 // =====================================================
-// FUNÇÃO PARA VER SE O MANIFESTO ESTÁ COMPLETO E FINALIZAR
+// FUNÇÃO PARA VER SE O MANIFESTO ESTÁ COMPLETO E FINALIZAR AUTOMATICAMENTE
 // =====================================================
 function verificarFimDoManifesto() {
     const container = document.getElementById('lista-notas-container');
@@ -736,8 +667,90 @@ function verificarFimDoManifesto() {
 
     // Se não houver mais cards visíveis na seção de pendentes
     if (notasRestantes.length === 0) {
-        const modalKM = new bootstrap.Modal(document.getElementById('kmFinalModal'));
-        setTimeout(() => { modalKM.show(); }, 800);
+        finalizarManifestoAutomatico();
+    }
+}
+
+// =====================================================
+// FINALIZAÇÃO AUTOMÁTICA EM SEGUNDO PLANO
+// =====================================================
+async function finalizarManifestoAutomatico() {
+    const manifestoId = localStorage.getItem('manifesto_ativo') || 
+                manifestoAtual || 
+                document.getElementById('manifesto-id-display')?.innerText;
+    
+    if (!manifestoId) return;
+
+    // Se já estivermos enviando, abortar (para não mandar 2 requisições juntas)
+    if (window.isFinalizandoManifesto) return;
+    window.isFinalizandoManifesto = true;
+    
+    console.log("🚀 Todas notas baixadas! Fechando o manifesto automaticamente: ", manifestoId);
+    
+    // Abre o Modal com mensagem de aviso e sucesso
+    const modalKMElement = document.getElementById('kmFinalModal');
+    const modalBody = modalKMElement.querySelector('.modal-body');
+    const msgDiv = document.getElementById('finalizar-message');
+    const submitBtn = modalBody.querySelector('button[type="submit"]');
+
+    if (msgDiv) msgDiv.innerText = "Sincronizando o final da rota...";
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.style.display = 'none'; // Some com o botão de finalizar manual (já não haverá km_final)
+    }
+
+    // Mostra o modal (mesmo que estivesse escondido)
+    const modalKM = new bootstrap.Modal(modalKMElement);
+    modalKM.show();
+
+    try {
+        const response = await authFetch(`${API_BASE}manifesto/finalizar/`, {
+            method: 'POST',
+            body: JSON.stringify({
+                km_final: "0", // Não precisa mais enviar esse dado válido manual
+                manifesto_id: manifestoId 
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            console.log("✅ Manifesto fechado no servidor! Deixando card de sucesso na tela.");
+            // SUCESSO: Mostramos o texto bonitão e travamos o modal lá por 30s
+            modalBody.innerHTML = `
+        <div class="text-center p-4 animate__animated animate__zoomIn">
+            <i class="bi bi-check-circle-fill text-success" style="font-size: 5rem;"></i>
+            <h3 class="mt-3 fw-bold text-success">Jornada Concluída!</h3>
+            <p class="text-muted fw-bold">Todas as entregas deste manifesto foram encerradas.</p>
+            <p class="small text-muted">Aguardando fechamento da tela em alguns instantes...</p>
+        </div>
+    `;
+
+            // O app entende que já fechou, remove ativo
+            localStorage.removeItem('manifesto_ativo');
+            
+            // Aguarda os 30 Segundos 
+            setTimeout(() => {
+                window.location.reload();
+            }, 30000); 
+
+        } else {
+            console.error("❌ O backend recusou o encerramento automático:", data);
+            modalBody.innerHTML = `
+                <div class="text-center p-4">
+                    <i class="bi bi-exclamation-octagon text-danger" style="font-size: 4rem;"></i>
+                    <h4 class="mt-3 text-danger">Falha no Fechamento</h4>
+                    <p class="text-muted">${data.mensagem || "Houve uma falha na confirmação do fim da rota."}</p>
+                    <button class="btn btn-primary mt-2" onclick="window.location.reload()">Recarregar e Tentar Novamente</button>
+                </div>
+            `;
+            window.isFinalizandoManifesto = false;
+        }
+    } catch (err) {
+        console.error("❌ Falha de internet ao tentar finalizar manifesto:", err);
+        // Em caso de falha de conexão, permite que a tela de polling assuma novamente.
+        window.isFinalizandoManifesto = false;
+        modalKM.hide();
     }
 }
 
@@ -953,46 +966,54 @@ function handleCameraNativa(event) {
 
     const canvas = document.getElementById('canvas-preview');
     const ctx = canvas.getContext('2d');
-    const reader = new FileReader();
+    
+    // Uso eficiente de memória para dispositivos móveis
+    const imgUrl = URL.createObjectURL(file);
+    const img = new Image();
 
-    reader.onload = function (e) {
-        const img = new Image();
-        img.onload = function () {
-            // Mantemos a alta resolução (1600px) para o faturamento
-            const larguraDesejada = 1600;
-            const escala = larguraDesejada / img.width;
-            canvas.width = larguraDesejada;
-            canvas.height = img.height * escala;
+    img.onload = function () {
+        // Reduzido de 1600px para 1200px para economizar RAM em celulares antigos
+        const larguraDesejada = 1200;
+        
+        let escala = 1;
+        if (img.width > larguraDesejada) {
+            escala = larguraDesejada / img.width;
+        }
 
-            // Desenha no canvas (isso acontece na memória "interna")
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.width = img.width * escala;
+        canvas.height = img.height * escala;
 
-            // --- MUDANÇA AQUI: NÃO MOSTRAMOS O CANVAS ---
-            canvas.style.display = 'none'; 
-            // Criamos uma marcação interna para o salvarRegistro saber que tem foto
-            canvas.dataset.temFoto = "true"; 
+        // Desenha no canvas (isso acontece na memória "interna")
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        // Libera a memória brutalmente logo após o desenho
+        URL.revokeObjectURL(imgUrl);
 
-            // Atualiza a interface de forma LEVE (apenas ícone e texto)
-            const placeholder = document.getElementById('placeholder-camera');
-            const icone = document.getElementById('icone-camera');
-            const texto = document.getElementById('texto-status-foto');
+        // --- MUDANÇA AQUI: NÃO MOSTRAMOS O CANVAS ---
+        canvas.style.display = 'none'; 
+        // Criamos uma marcação interna para o salvarRegistro saber que tem foto
+        canvas.dataset.temFoto = "true"; 
 
-            if (icone) {
-                icone.className = "bi bi-check-circle-fill text-success";
-                icone.style.fontSize = "3rem";
-            }
-            if (texto) {
-                texto.innerText = "Foto capturada com sucesso!";
-                texto.className = "text-success fw-bold mt-2";
-            }
+        // Atualiza a interface de forma LEVE (apenas ícone e texto)
+        const placeholder = document.getElementById('placeholder-camera');
+        const icone = document.getElementById('icone-camera');
+        const texto = document.getElementById('texto-status-foto');
 
-            // Troca os botões
-            document.getElementById('label-camera').style.display = 'none';
-            document.getElementById('btn-nova-foto').style.display = 'block';
-        };
-        img.src = e.target.result;
+        if (icone) {
+            icone.className = "bi bi-check-circle-fill text-success";
+            icone.style.fontSize = "3rem";
+        }
+        if (texto) {
+            texto.innerText = "Foto capturada com sucesso!";
+            texto.className = "text-success fw-bold mt-2";
+        }
+
+        // Troca os botões
+        document.getElementById('label-camera').style.display = 'none';
+        document.getElementById('btn-nova-foto').style.display = 'block';
     };
-    reader.readAsDataURL(file);
+    
+    img.src = imgUrl;
 }
 // =========================================================================
 // Abre o modal de baixa com os dados da nota e configurações específicas
