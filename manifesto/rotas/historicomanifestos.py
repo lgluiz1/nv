@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.utils import timezone
+from django.utils.timezone import localtime
 
 from manifesto.models import Manifesto
 
@@ -60,15 +61,15 @@ class HistoricoManifestosView(views.APIView):
                         "foto_comprovante": baixa.comprovante_foto_url if baixa else None,
                         "recebedor": baixa.recebedor if baixa and baixa.recebedor else "Não informado",
                         "data_baixa": (
-                            baixa.data_baixa.strftime('%d/%m/%Y %H:%M') if baixa 
-                            else (ultima_ocorrencia.data_ocorrencia.strftime('%d/%m/%Y %H:%M') if ultima_ocorrencia else None)
+                            localtime(baixa.data_baixa).strftime('%d/%m/%Y %H:%M') if baixa 
+                            else (localtime(ultima_ocorrencia.data_ocorrencia).strftime('%d/%m/%Y %H:%M') if ultima_ocorrencia else None)
                         )
                     })
 
                 dados.append({
                     "numero": manifesto.numero_manifesto,
                     "qtd_nfe": len(dados_notas),
-                    "data": (manifesto.data_finalizacao or manifesto.data_criacao).strftime('%d/%m/%Y'),
+                    "data": (localtime(manifesto.data_finalizacao or manifesto.data_criacao)).strftime('%d/%m/%Y'),
                     "km_final": str(manifesto.km_final) if manifesto.km_final else "N/A",
                     "notas": dados_notas
                 })

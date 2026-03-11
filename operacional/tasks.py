@@ -2,6 +2,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.conf import settings
+from django.utils.timezone import localtime
 from celery import shared_task
 
 @shared_task(bind=True, max_retries=3)
@@ -40,7 +41,7 @@ def enviar_email_erro_tms_task(self, baixa_id, mensagem_erro):
         destinatario_nome = nota.destinatario
         tipo_baixa = baixa.get_tipo_display()
         ocorrencia_desc = baixa.ocorrencia.descricao if baixa.ocorrencia else 'N/A'
-        data_baixa = baixa.data_baixa.strftime('%d/%m/%Y %H:%M')
+        data_baixa = localtime(baixa.data_baixa).strftime('%d/%m/%Y %H:%M')
         foto_url = baixa.comprovante_foto_url if hasattr(baixa, 'comprovante_foto_url') else None
 
         html_content = f"""

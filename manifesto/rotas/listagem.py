@@ -1,6 +1,5 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
 from manifesto.models import NotaFiscal
+from django.utils.timezone import localtime
 
 class ListarNotasManifestoView(APIView):
     def get(self, request):
@@ -28,8 +27,8 @@ class ListarNotasManifestoView(APIView):
                     # Verificação extra para evitar erro se a ocorrência for nula
                     'ocorrencia': baixa.ocorrencia.descricao if baixa.ocorrencia else "Não informada",
                     'recebedor': baixa.recebedor,
-                    # Formatando a data com o fuso de Brasília que configuramos
-                    'data': baixa.data_baixa.strftime('%d/%m/%Y %H:%M') if baixa.data_baixa else None,
+                    # Formatando a data com o fuso de Brasília (localtime)
+                    'data': localtime(baixa.data_baixa).strftime('%d/%m/%Y %H:%M') if baixa.data_baixa else None,
                     'foto_url': baixa.comprovante_foto_url if baixa.comprovante_foto_url else None,
                     'lat': float(baixa.latitude) if baixa.latitude else None,
                     'lng': float(baixa.longitude) if baixa.longitude else None

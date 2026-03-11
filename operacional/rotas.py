@@ -1,5 +1,6 @@
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
+from django.utils.timezone import localtime
 from django.db.models import Q
 import requests, json
 from django.views.decorators.csrf import csrf_exempt
@@ -192,7 +193,7 @@ def api_rastreio_manifesto(request, manifesto_id):
                 'status': nota.status,
                 'lat': float(baixa.latitude),
                 'lng': float(baixa.longitude),
-                'horario': baixa.data_baixa.strftime('%H:%M'),
+                'horario': localtime(baixa.data_baixa).strftime('%H:%M'),
                 'tipo': baixa.get_tipo_display()
             })
 
