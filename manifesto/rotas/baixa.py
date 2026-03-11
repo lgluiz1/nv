@@ -91,6 +91,12 @@ class RegistrarBaixaView(APIView):
                 # --- REGISTRO DA BAIXA ---
                 data_manual = request.data.get('data_baixa')
                 
+                # Buscamos a baixa existente ANTES de criar para saber a data_baixa
+                baixa_existente = BaixaNF.objects.filter(nota_fiscal=nf).first()
+                
+                # Lógica: se tem data manual, usa ela. Se não, se já existe baixa, mantém a data dela. Se é nova, usa agora.
+                data_final_baixa = data_manual if data_manual else (baixa_existente.data_baixa if baixa_existente else timezone.now())
+
                 baixa, created = BaixaNF.objects.update_or_create(
                     nota_fiscal=nf,
                     defaults={
@@ -101,7 +107,7 @@ class RegistrarBaixaView(APIView):
                         'latitude': request.data.get('latitude'),
                         'longitude': request.data.get('longitude'),
                         'observacao': observacao_app if is_retida else request.data.get('observacao', ''),
-                        'data_baixa': data_manual if data_manual else (baixa.data_baixa if not created else timezone.now())
+                        'data_baixa': data_final_baixa
                     }
                 )
 
