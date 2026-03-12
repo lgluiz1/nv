@@ -32,11 +32,13 @@ def painel_monitoramento(request):
     # O user pediu isolamento. Vamos filtrar a exibição inicial também!
     qs = Manifesto.objects.filter(status='EM_TRANSPORTE')
     # Opcional: Se 'filial' puder ser passada na URL
+    # 2. FILTRO DE FILIAL (Prioridade: URL param -> Perfil do Usuário -> Todas)
     filial_param_id = request.GET.get('filial')
-    if filial_param_id and filial_param_id != 'todas':
+    if filial_param_id == 'todas' or filial_param_id == 'Todas as Filiais':
+        # Não filtra por filial, mostra tudo
+        pass
+    elif filial_param_id:
         qs = qs.filter(filial_id=filial_param_id)
-        # Ajusta a filial selecionada se a URL for alterada
-        # Mas para simplificar, usaremos o padrao da filial ativa do perfil
     elif usuario_filial:
         qs = qs.filter(filial=usuario_filial)
 

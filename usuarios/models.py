@@ -47,6 +47,13 @@ class Motorista(models.Model):
         verbose_name="Foto de Perfil"
     )
 
+    # NOVO: Status em tempo real persistente
+    ultima_bateria = models.IntegerField(null=True, blank=True, verbose_name="Última Bateria (%)")
+    ultimo_acesso = models.DateTimeField(null=True, blank=True, verbose_name="Último Acesso")
+    ultima_rede = models.CharField(max_length=20, null=True, blank=True, verbose_name="Tipo de Rede")
+    ultima_lat = models.FloatField(null=True, blank=True, verbose_name="Última Latitude")
+    ultima_lng = models.FloatField(null=True, blank=True, verbose_name="Última Longitude")
+
     # NOVO: Vínculo do usuário com a Filial (Para filtro operacional automatizado)
     filial = models.ForeignKey(
         'Filial',

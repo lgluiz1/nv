@@ -50,15 +50,26 @@
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-body">
             <form method="GET" class="row g-3 align-items-end">
-                <div class="col-md-4">
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">Filial</label>
+                    <select name="filial" class="form-select">
+                        <option value="todas">Todas as Filiais</option>
+                        {% for f in filiais %}
+                        <option value="{{ f.id }}" {% if request.GET.filial == f.id|stringformat:"i" %}selected{% endif %}>
+                            {{ f.nome }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
                     <label class="form-label small fw-bold">Data Início</label>
                     <input type="date" name="data_inicio" class="form-control" value="{{ data_inicio }}">
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label small fw-bold">Data Fim</label>
                     <input type="date" name="data_fim" class="form-control" value="{{ data_fim }}">
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <button type="submit" class="btn btn-primary w-100">
                         <i class="bi bi-filter"></i> Filtrar Analise
                     </button>

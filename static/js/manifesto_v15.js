@@ -26,6 +26,9 @@ let loadingModal = null;
 let pollingInterval = null;
 let manifestoAtual = null;
 let jaMudouDeTela = false;
+let socketTracking = null;
+let filialIdMotorista = 'todas';
+let heartbeatInterval = null;
 
 function abrirDB() {
     return new Promise((resolve, reject) => {
@@ -137,10 +140,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const authenticated = await initAuth();
     if (authenticated) {
+        await carregarDadosCabecalho(); // Espera carregar filial para o WS
         forcarUpdatePWA();
         atualizarDadosHeader();
         verificarEstadoInicial();
-        carregarDadosCabecalho();
 
         const inputCamera = document.getElementById('camera-nativa');
         if (inputCamera) {
@@ -612,6 +615,7 @@ async function verificarEstadoInicial() {
             if (el) el.innerText = data.numero_manifesto;
 
             atualizarListaViva(data.numero_manifesto);
+            iniciarCoracaoTracking(); // Inicia o tracking se tem manifesto
         } else {
             console.log("ℹ️ Nenhum manifesto ativo.");
             localStorage.removeItem('manifesto_ativo');
@@ -1123,6 +1127,11 @@ async function carregarDadosCabecalho() {
             const nomeExibicao = document.getElementById('nome-motorista');
             if (nomeExibicao) nomeExibicao.innerText = dados.nome;
 
+            // Salva a filial para o WebSocket
+            if (dados.filial_id) {
+                filialIdMotorista = dados.filial_id;
+            }
+
         } else {
             console.log("Não foi possível carregar os dados do perfil ou motorista anônimo.");
         }
@@ -1252,6 +1261,9 @@ function getCoords() {
         );
     });
 }
+
+// O Coração de Rastreamento (Heartbeat) foi movido para o arquivo pwa_tracking.js
+// para garantir estabilidade e melhor gerenciamento de cache no PWA.
 
 function abrirModalDetalhes(dados) {
     const container = document.getElementById('modal-detalhes-body');

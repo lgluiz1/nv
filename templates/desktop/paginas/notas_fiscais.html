@@ -17,7 +17,19 @@
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
         <form method="GET" action="." class="row g-3">
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <label class="small fw-bold text-muted">Filial</label>
+                <select name="filial" class="form-select">
+                    <option value="todas">Todas as Filiais</option>
+                    {% for f in filiais %}
+                    <option value="{{ f.id }}" {% if request.GET.filial == f.id|stringformat:"i" %}selected{% endif %}>
+                        {{ f.nome }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-2">
                 <label class="small fw-bold text-muted">NF-e ou Chave</label>
                 <input type="text" name="q" class="form-control form-control-sm" placeholder="Ex: 5564" value="{{ request.GET.q }}">
             </div>
@@ -66,7 +78,7 @@
                 </thead>
                 <tbody>
                     {% for nota in notas %}
-                    {% with ultima_baixa=nota.baixa_info.all.last %}
+                    {% with ultima_baixa=nota.ultima_baixa %}
                     <tr>
                         <td>
                             <span class="fw-bold text-primary">{{ nota.numero_nota }}</span>
@@ -108,7 +120,7 @@
                                 </button>
                                 {% endif %}
                                 
-                                {% with baixa=nota.baixa_info.all.last %}
+                                {% with baixa=nota.ultima_baixa %}
         
         {# CASO 1: Já está integrado com sucesso - Mostra Ícone Positivo #}
         {% if baixa.integrado_tms %}
@@ -144,6 +156,50 @@
                 </tbody>
             </table>
         </div>
+        
+        <!-- Paginação -->
+        {% if is_paginated %}
+        <div class="card-footer bg-white border-0 py-3">
+            <nav aria-label="Navegação de notas">
+                <ul class="pagination pagination-sm justify-content-center mb-0">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page=1{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" title="Primeira Página">
+                                <i class="bi bi-chevron-double-left"></i>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                                Anterior
+                            </a>
+                        </li>
+                    {% endif %}
+
+                    <li class="page-item disabled">
+                        <span class="page-link text-dark fw-bold">
+                            Página {{ page_obj.number }} de {{ paginator.num_pages }}
+                        </span>
+                    </li>
+
+                    {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                                Próxima
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ paginator.num_pages }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" title="Última Página">
+                                <i class="bi bi-chevron-double-right"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+                <div class="text-center mt-2 small text-muted">
+                    Total de {{ paginator.count }} notas encontradas
+                </div>
+            </nav>
+        </div>
+        {% endif %}
     </div>
 </div>
 

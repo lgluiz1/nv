@@ -6,15 +6,14 @@ from django.contrib.auth import authenticate, login
 from usuarios.models import Motorista , Filial
 from manifesto.models import Manifesto, Ocorrencia , NotaFiscal , BaixaNF , ManifestoBuscaLog, HistoricoOcorrencia
 import json
-from django.views.generic import TemplateView
+from django.views.generic import TemplateView, ListView
 from django.utils.decorators import method_decorator
 from django.contrib.auth.decorators import login_required
 from django.db.models.functions import ExtractHour
 from usuarios.decorators import apenas_operacional
 from django.utils import timezone
 from datetime import timedelta
-from django.db.models import Count, Q, Sum, Avg, ExpressionWrapper, FloatField
-from django.views.generic import ListView
+from django.db.models import Count, Q, Sum, Avg, ExpressionWrapper, FloatField, Prefetch
 from collections import defaultdict
 
 def login_operacional_view(request):
@@ -131,9 +130,12 @@ class DashboardView(TemplateView):
         manifestos_do_dia = Manifesto.objects.filter(data_criacao__range=(hoje_inicio, hoje_fim))
         
         # 2. Aplica filtro de Filial (Prioridade: URL param -> Perfil do Usuário -> Todas)
-        if filial_param and filial_param != 'todas':
+        if filial_param == 'todas':
+            # Não filtra por filial, mostra tudo
+            pass
+        elif filial_param:
             manifestos_do_dia = manifestos_do_dia.filter(filial_id=filial_param)
-        elif not filial_param and usuario_filial:
+        elif usuario_filial:
             manifestos_do_dia = manifestos_do_dia.filter(filial=usuario_filial)
 
         notas_do_dia = NotaFiscal.objects.filter(manifesto__in=manifestos_do_dia)
@@ -210,12 +212,12 @@ class DashboardView(TemplateView):
 
 @method_decorator(login_required, name='dispatch')
 @method_decorator(apenas_operacional, name='dispatch')
-class NotasFiscaisListView(TemplateView):
+class NotasFiscaisListView(ListView):
     template_name = 'desktop/paginas/notas_fiscais.html'
+    context_object_name = 'notas'
+    paginate_by = 50
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        
+    def get_queryset(self):
         usuario_filial = None
         if self.request.user.is_authenticated:
             try:
@@ -224,14 +226,16 @@ class NotasFiscaisListView(TemplateView):
             except Motorista.DoesNotExist:
                 pass
 
-        # Inicia a query com todos os registros otimizados
+        # Subquery para pegar apenas a última baixa_info de cada nota de forma eficiente
+        # No Django 4.x+, prefetch_related com to_attr e QuerySet limitado funciona bem
+        baixas_prefetch = BaixaNF.objects.order_by('-data_baixa')
+
         queryset = NotaFiscal.objects.select_related(
             'manifesto', 'manifesto__motorista'
         ).prefetch_related(
-            'baixa_info', 'baixa_info__ocorrencia'
-        ).order_by('-manifesto__data_criacao')
-
-        
+            Prefetch('baixa_info', queryset=baixas_prefetch, to_attr='_prefetched_ultima_baixa'),
+            'baixa_info__ocorrencia'
+        ).order_by('-manifesto__data_criacao', '-id')
 
         # --- LÓGICA DE FILTROS ---
         q = self.request.GET.get('q') # Busca Geral (NF ou Chave)
@@ -241,9 +245,11 @@ class NotasFiscaisListView(TemplateView):
         data_inicio = self.request.GET.get('data_inicio')
         filial_param = self.request.GET.get('filial')
 
-        if filial_param and filial_param != 'todas':
+        if filial_param == 'todas':
+            pass
+        elif filial_param:
             queryset = queryset.filter(manifesto__filial_id=filial_param)
-        elif not filial_param and usuario_filial:
+        elif usuario_filial:
             queryset = queryset.filter(manifesto__filial=usuario_filial)
 
         if q:
@@ -264,11 +270,24 @@ class NotasFiscaisListView(TemplateView):
         if data_inicio:
             queryset = queryset.filter(manifesto__data_criacao__date=data_inicio)
 
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        usuario_filial = None
+        if self.request.user.is_authenticated:
+            try:
+                perfil = Motorista.objects.get(user=self.request.user)
+                usuario_filial = perfil.filial
+            except Motorista.DoesNotExist:
+                pass
+
+        filial_param = self.request.GET.get('filial')
+
         context['ocorrencias'] = Ocorrencia.objects.all().order_by('descricao')
-        context['notas'] = queryset[:100] # Limitamos a 100 para performance
         context['titulo'] = "Gestão de Notas Fiscais"
         context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
-        
         context['filiais'] = Filial.objects.all().order_by('nome')
         context['filial_selecionada'] = filial_param if filial_param else (str(usuario_filial.id) if usuario_filial else 'todas')
         
@@ -338,9 +357,12 @@ class ManifestosMonitoramentoView(ListView):
         motorista = self.request.GET.get('motorista')
         data_str = self.request.GET.get('data')
 
-        if filial_id and filial_id != 'todas':
+        if filial_id == 'todas':
+            # Não filtra por filial, mostra tudo
+            pass
+        elif filial_id:
             queryset = queryset.filter(filial_id=filial_id)
-        elif not filial_id and usuario_filial:
+        elif usuario_filial:
             queryset = queryset.filter(filial=usuario_filial)
         
         if numero:
@@ -601,9 +623,12 @@ class MotoristasPerformanceView(LoginRequiredMixin, ListView):
         
         # Filtro de Filial
         filial_param = self.request.GET.get('filial')
-        if filial_param and filial_param != 'todas':
+        if filial_param == 'todas':
+            # Não filtra por filial, mostra tudo
+            pass
+        elif filial_param:
             queryset = queryset.filter(filial_id=filial_param)
-        elif not filial_param and usuario_filial:
+        elif usuario_filial:
             queryset = queryset.filter(filial=usuario_filial)
 
         # 2. Captura datas do filtro

@@ -10,13 +10,18 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h3 class="fw-bold">Gestão de Manifestos</h3>
-        <span class="badge bg-light text-dark border shadow-sm p-2">
-            <i class="bi bi-arrow-clockwise me-1 text-primary"></i>
-            Próxima atualização em: <span id="timer-regressivo" class="fw-bold">03:00</span>
-        </span>
-        <button class="btn btn-success shadow-sm ms-2" onclick="abrirModalImportarManifesto()">
-            <i class="bi bi-cloud-download me-1"></i> Importar Manifesto
-        </button>
+        <div class="d-flex align-items-center">
+            <span class="badge bg-light text-dark border shadow-sm p-2 me-2">
+                <i class="bi bi-arrow-clockwise me-1 text-primary"></i>
+                Próxima atualização em: <span id="timer-regressivo" class="fw-bold">03:00</span>
+            </span>
+            <div id="status-ws" class="badge bg-danger p-2 me-2 shadow-sm" style="border-radius: 20px; min-width: 120px;">
+                <i class="fas fa-circle me-2"></i>DESCONECTADO
+            </div>
+            <button class="btn btn-success shadow-sm" onclick="abrirModalImportarManifesto()">
+                <i class="bi bi-cloud-download me-1"></i> Importar Manifesto
+            </button>
+        </div>
     </div>
 
     <!-- Log de Importações Recentes -->
@@ -85,14 +90,11 @@
                 <div class="col-md-2">
                     <label class="small fw-bold text-muted">Filial</label>
                     <select name="filial" class="form-select">
-                        <option value="">Todas as Filiais</option>
+                        <option value="todas">Todas as Filiais</option>
                         {% for f in filiais %}
-                        {# Criamos uma variável temporária com o ID formatado como string #}
-                        {% with filial_id_str=f.id|stringformat:"i" %}
-                        <option value="{{ f.id }}" {% if request.GET.filial == f.id|stringformat:"s" %}selected{% endif %}>
+                        <option value="{{ f.id }}" {% if request.GET.filial == f.id|stringformat:"i" %}selected{% endif %}>
                             {{ f.nome }}
                         </option>
-                        {% endwith %}
                         {% endfor %}
                     </select>
                 </div>
@@ -131,13 +133,15 @@
                         <th>Motorista</th>
                         <th>Status</th>
                         <th style="width: 250px;">Progresso de Entrega</th>
-                        <th>Data Criação</th>
+                        <th class="text-center" title="Bateria do Celular">Bateria</th>
+                        <th class="text-center">Último Acesso</th>
+                        <th class="text-center">Rastreio</th>
                         <th class="text-center">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for m in manifestos %}
-                    <tr>
+                    <tr data-manifesto-id="{{ m.numero_manifesto }}">
                         <td class="fw-bold text-primary">#{{ m.numero_manifesto }}</td>
                         <td>
                             <div class="small fw-bold">{{ m.motorista.nome_completo }}</div>
@@ -172,21 +176,70 @@
                             {% endwith %}
                             {% endwith %}
                         </td>
-                        <td class="small">{{ m.data_criacao|date:"d/m/Y H:i" }}</td>
+                        <td class="text-center" id="battery-mft-{{ m.numero_manifesto }}">
+                            {% if m.status == 'EM_TRANSPORTE' %}
+                            <div class="d-flex flex-column align-items-center">
+                                {% if m.ultima_bateria is not None %}
+                                    {% if m.ultima_bateria > 80 %}
+                                        <i class="bi bi-battery-full text-success" style="font-size: 1.2rem;"></i>
+                                        <small class="text-success">{{ m.ultima_bateria }}%</small>
+                                    {% elif m.ultima_bateria > 50 %}
+                                        <i class="bi bi-battery-half text-info" style="font-size: 1.2rem;"></i>
+                                        <small class="text-info">{{ m.ultima_bateria }}%</small>
+                                    {% elif m.ultima_bateria > 20 %}
+                                        <i class="bi bi-battery-half text-warning" style="font-size: 1.2rem;"></i>
+                                        <small class="text-warning">{{ m.ultima_bateria }}%</small>
+                                    {% else %}
+                                        <i class="bi bi-battery-low text-danger" style="font-size: 1.2rem;"></i>
+                                        <small class="text-danger">{{ m.ultima_bateria }}%</small>
+                                    {% endif %}
+                                {% else %}
+                                    <i class="bi bi-battery text-muted" style="font-size: 1.2rem;"></i>
+                                    <small class="text-muted">--%</small>
+                                {% endif %}
+                                <div class="badge bg-light text-dark border-0 mt-1" style="font-size: 0.65rem;" id="network-mft-{{ m.numero_manifesto }}">
+                                    {{ m.ultima_rede|default:"--" }}
+                                </div>
+                            </div>
+                            {% else %}
+                            <span class="text-muted">--</span>
+                            {% endif %}
+                        </td>
+                        <td class="small text-nowrap text-center" id="last-seen-mft-{{ m.numero_manifesto }}">
+                            {% if m.status == 'EM_TRANSPORTE' %}
+                            <div class="text-muted" style="font-size: 0.9rem; font-weight: bold; text-align: center;">
+                                {{ m.ultimo_acesso|date:"H:i"|default:"--:--" }}
+                            </div>
+                            {% else %}
+                            <span class="text-muted">--:--</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if m.status == 'EM_TRANSPORTE' %}
+                            <button class="btn btn-sm btn-info text-white" 
+                                    onclick="abrirRastreamentoRealTime('{{ m.numero_manifesto }}', '{{ m.motorista.nome_completo|escapejs }}', '{{ m.ultima_lat|default:'' }}', '{{ m.ultima_lng|default:'' }}')" 
+                                    title="Rastrear em Tempo Real">
+                                <i class="bi bi-geo-alt-fill"></i>
+                            </button>
+                            {% else %}
+                            <i class="bi bi-geo text-muted opacity-25"></i>
+                            {% endif %}
+                        </td>
                         <td class="text-center">
                             <div class="btn-group">
-                                <button class="btn btn-sm btn-outline-primary"
-                                    onclick="verDetalhesManifesto('{{ m.id }}')" title="Ver detalhes do manifesto">
+                                <button class="btn btn-sm btn-primary" onclick="verDetalhesManifesto('{{ m.id }}')" title="Ver Detalhes">
                                     <i class="bi bi-eye"></i>
                                 </button>
                                 <button class="btn btn-sm btn-outline-primary"
                                     onclick="abrirEdicaoManifesto('{{ m.id }}')" title="Editar">
                                     <i class="bi bi-pencil-square"></i>
                                 </button>
+                                {% if m.status == 'EM_TRANSPORTE' %}
                                 <button class="btn btn-sm btn-outline-secondary"
                                     onclick="sincronizarManifesto('{{ m.id }}')" title="Sincronizar com TMS">
                                     <i class="bi bi-arrow-repeat"></i>
                                 </button>
+                                {% endif %}
                                 <button class="btn btn-sm btn-outline-danger"
                                     onclick="confirmarExclusaoManifesto('{{ m.id }}', '{{ m.numero_manifesto }}', '{{ m.motorista.nome_completo }}')"
                                     title="Deletar">
@@ -326,6 +379,49 @@
     </div>
 </div>
 
+<!-- Modal de Rastreamento em Tempo Real -->
+<div class="modal fade" id="modalRastreamento" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden;">
+            <div class="modal-header bg-dark text-white border-0 py-3">
+                <div class="d-flex align-items-center">
+                    <div class="p-2 bg-primary rounded-circle me-3">
+                        <i class="bi bi-truck text-white"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold m-0" id="rastreamento-titulo">Rastreando Motorista</h5>
+                        <p class="text-light small m-0 opacity-75">Manifesto: <span id="rastreamento-mft">--</span></p>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0 position-relative">
+                <div id="mapa-rastreamento" style="height: 600px; width: 100%;"></div>
+                
+                <!-- Overlay de Status no Mapa -->
+                <div class="position-absolute top-0 start-0 m-3 p-3 bg-white rounded shadow-sm border" style="z-index: 1000; min-width: 200px; border-radius: 12px !important;">
+                    <div class="fw-bold mb-2 border-bottom pb-1">Status Atual</div>
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="text-muted small">Bateria:</span>
+                        <span id="mapa-status-bat" class="fw-bold">--</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="text-muted small">Sinal:</span>
+                        <span id="mapa-status-rede" class="badge bg-light text-dark">--</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted small">Último Sinal:</span>
+                        <span id="mapa-status-visto" class="text-primary fw-bold">--</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-0">
+                <button type="button" class="btn btn-secondary px-4 fw-bold" data-bs-dismiss="modal">Fechar Monitoramento</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     function abrirEdicaoManifesto(id) {
         const modalElement = document.getElementById('modalGenerico');
@@ -412,7 +508,7 @@
             });
     }
 
-    // Função para abrir o modal de detalhes do manifesto
+    // Função para abrir o Modal para Detalhes do Manifesto
     function verDetalhesManifesto(manifestoId) {
         if (!manifestoId) return;
 
@@ -760,4 +856,11 @@
     }
 </script>
 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    window.FILIAL_ATIVA = "{{ filial_selecionada|default:'todas' }}";
+</script>
+<script src="{% static 'desktop/js/monitoramento/ws.js' %}"></script>
 {% endblock %}

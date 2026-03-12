@@ -2,6 +2,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
 from usuarios.models import Motorista, Filial
 from manifesto.models import ManifestoBuscaLog, Manifesto
 from manifesto.tasks import buscar_manifesto_completo_task
@@ -16,7 +17,6 @@ class BuscarManifestoView(APIView):
         try:
             motorista = getattr(request.user, 'motorista_perfil', None)
             if not motorista:
-                # Se não tem perfil de motorista, tenta buscar pelo CPF (caso seja admin sem perfil vinculado)
                 logger.warning(f"Usuário {request.user.username} não possui motorista_perfil vinculado.")
                 return Response({'erro': 'Seu usuário não possui um perfil de motorista vinculado.'}, status=403)
 
@@ -24,19 +24,64 @@ class BuscarManifestoView(APIView):
             if not numero:
                 return Response({'erro': 'Número do manifesto é obrigatório'}, status=400)
 
-            log, created = ManifestoBuscaLog.objects.update_or_create(
-                numero_manifesto=numero,
-                motorista=motorista,
-                defaults={
-                    'status': 'AGUARDANDO',
-                    'mensagem_erro': None,
-                    'payload': None
-                }
-            )
-            logger.info(f"PWA: Log {'criado' if created else 'atualizado'} para manifesto {numero}. ID={log.id}")
-            buscar_manifesto_completo_task.delay(log.id)
+            # Normalização simples: remove zeros à esquerda para batimento flexível
+            numero_limpo = str(numero).strip().lstrip('0')
 
-            return Response({'status': 'AGUARDANDO', 'log_id': log.id}, status=202)
+            with transaction.atomic():
+                # 1. VERIFICAÇÃO LOCAL (Prioridade para manifestos recebidos via Webhook)
+                # Tenta busca exata e depois busca normalizada
+                manifesto_local = Manifesto.objects.filter(
+                    numero_manifesto=numero, 
+                    status='AGUARDANDO'
+                ).first()
+
+                if not manifesto_local and numero_limpo:
+                    manifesto_local = Manifesto.objects.filter(
+                        numero_manifesto=numero_limpo,
+                        status='AGUARDANDO'
+                    ).first()
+
+                if manifesto_local:
+                    # Verifica se o motorista já possui um manifesto em transporte (regra de 1 ativo)
+                    if Manifesto.objects.filter(motorista=motorista, status='EM_TRANSPORTE').exists():
+                        return Response({
+                            "erro": "Você já possui um manifesto em transporte ativo. Finalize-o antes de iniciar um novo."
+                        }, status=400)
+
+                    # Ativa o manifesto local para este motorista
+                    manifesto_local.motorista = motorista
+                    manifesto_local.status = 'EM_TRANSPORTE'
+                    manifesto_local.save()
+
+                    # Cria ou atualiza o log de busca como PROCESSADO
+                    log, _ = ManifestoBuscaLog.objects.update_or_create(
+                        numero_manifesto=numero,
+                        motorista=motorista,
+                        defaults={'status': 'PROCESSADO', 'mensagem_erro': None}
+                    )
+
+                    logger.info(f"PWA: Manifesto {numero} ativado via busca LOCAL (Webhook). ID Log={log.id}")
+                    return Response({
+                        "mensagem": "Manifesto localizado e ativado com sucesso!",
+                        "status": "PROCESSADO",
+                        "local": True
+                    }, status=200)
+
+                # 2. FALLBACK: Sincronização externa com TMS (Lógica atual)
+                log, created = ManifestoBuscaLog.objects.update_or_create(
+                    numero_manifesto=numero,
+                    motorista=motorista,
+                    defaults={
+                        'status': 'AGUARDANDO',
+                        'mensagem_erro': None,
+                        'payload': None
+                    }
+                )
+                logger.info(f"PWA: Log {'criado' if created else 'atualizado'} para manifesto {numero}. ID={log.id}")
+                buscar_manifesto_completo_task.delay(log.id)
+
+                return Response({'status': 'AGUARDANDO', 'log_id': log.id, 'local': False}, status=202)
+
         except Exception as e:
             logger.error(f"Erro na BuscarManifestoView (PWA): {str(e)}")
             return Response({'erro': str(e)}, status=500)

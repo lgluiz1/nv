@@ -17,7 +17,7 @@ from manifesto.rotas.motorista_perfil import perfil_motorista
 from manifesto.views import ManifestoFinalizacaoView
 from manifesto.rotas.historicomanifestos import HistoricoManifestosView
 from manifesto.rotas.sincronizarmanifesto import SincronizarManifestoView
-from manifesto.rotas.webhook import webhook_tms_esl
+from manifesto.rotas.webhook import webhook_tms
 from manifesto.rotas.listagemocorrencias import ListarOcorrenciasView
 from manifesto.rotas.views_painel import painel_monitoramento
 
@@ -34,7 +34,7 @@ urlpatterns = [
     path('motorista/perfil/', perfil_motorista, name='motorista_perfil'),
     path('manifesto/finalizar/', ManifestoFinalizacaoView.as_view()),
     path('manifesto/sincronizar/', SincronizarManifestoView.as_view()),
-    path('manifesto/webhook/tms-esl/', webhook_tms_esl, name='webhook_tms_esl'),
+    path('webhook/tms/', webhook_tms, name='webhook_tms'),
     path('manifesto/ocorrencias/', ListarOcorrenciasView.as_view()),
     path('manifesto/baixa-operacional/', RegistrarBaixaOperacionalView.as_view()),
     path('manifesto/importar-admin/', ImportarManifestoAdminView.as_view()),

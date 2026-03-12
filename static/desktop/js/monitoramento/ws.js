@@ -3,129 +3,208 @@ const filialPrefix = window.FILIAL_ATIVA || 'todas';
 const ws_url = ws_scheme + "://" + window.location.host + "/ws/painel-logistico/" + filialPrefix + "/";
 
 let socket;
+let mapaRastreamento = null;
+let marcadorMotorista = null;
+let monitorandoManifestoId = null;
 
 function conectarWebSocket() {
+    console.log("🔌 Tentando conectar WebSocket em:", ws_url);
     socket = new WebSocket(ws_url);
 
     socket.onopen = function() {
-        console.log("WS conectado");
+        console.log("✅ WS Conectado!");
         const status = document.getElementById('status-ws');
-        status.classList.replace('bg-danger', 'bg-success');
-        status.innerHTML = '<i class="fas fa-circle me-2 animate-pulse"></i>CONECTADO';
+        if (status) {
+            status.classList.replace('bg-danger', 'bg-success');
+            status.innerHTML = '<i class="fas fa-circle me-2 animate-pulse"></i>CONECTADO';
+        }
     };
 
     socket.onmessage = function(e) {
-    const data = JSON.parse(e.data);
-    const mID = data.dados.manifesto_id;
-    console.log("WS recebeu dados para manifesto:", mID, data.dados);
-    const grid = document.getElementById("grid-monitoramento");
-    let card = document.getElementById(`card-mft-${mID}`);
-
-    // 🔴 REMOVER MANIFESTO FINALIZADO
-    if (data.dados.remover === true) {
-        if (card) {
-            card.classList.add("fade-out");
-            setTimeout(() => card.remove(), 600);
-        }
-        return;
-    }
-
-    // Se o card NÃO existe → cria
-    if (!card) {
-        console.log("Novo manifesto detectado:", mID);
-
-        const total = data.dados.total || 0;
-        const baixadas = data.dados.baixadas || 0;
-        const percent = data.dados.porcentagem || 0;
-        const motorista = data.dados.motorista_nome || "Motorista";
-        const data_registro = data.dados.data_registro || "--/--/---- --:--";
-
-        const novoCard = `
-        <div class="col-12 col-md-6 col-lg-4 col-xl-3" id="card-mft-${mID}">
-            <div class="card h-100 border-0 shadow-sm position-relative overflow-hidden card-update-flash" style="border-radius: 15px;">
+        try {
+            console.log("📩 WS Mensagem recebida:", e.data);
+            const data = JSON.parse(e.data);
+            
+            // 1. TRATAR STATUS DO MOTORISTA (HEARTBEAT)
+            if (data.type === 'status_motorista') {
+                const status = data.dados;
+                const mID = status.manifesto_id ? status.manifesto_id.toString().trim() : null;
                 
-                <div class="progress position-absolute top-0 start-0 w-100" style="height: 4px;">
-                    <div id="progress-bar-${mID}" class="progress-bar bg-primary" style="width: ${percent}%"></div>
+                if (!mID) return;
+
+                console.log("💓 Status recebido para:", mID, status);
+
+                // Atualiza Tabela (se existir no DOM)
+                updateBatteryIcon(mID, status.battery);
+                updateNetworkStatus(mID, status.network);
+                updateLastSeen(mID, status.last_seen);
+
+                // Atualiza Mapa Modal (se estiver aberto para este manifesto)
+                if (monitorandoManifestoId === mID && mapaRastreamento) {
+                    atualizarPosicaoMapa(status);
+                }
+                return;
+            }
+
+            // 2. TRATAR ATUALIZAÇÃO DE MANIFESTO (SIGNAL)
+            if (data.dados && data.type !== 'status_motorista') {
+                const mID = data.dados.manifesto_id;
+                // ... lógica de atualização de progresso na tabela ...
+                const progressBar = document.getElementById(`progress-bar-${mID}`);
+                if (progressBar) progressBar.style.width = (data.dados.porcentagem || 0) + '%';
+            }
+        } catch (err) {
+            console.error("❌ Erro ao processar mensagem WS:", err);
+        }
+    };
+
+    function updateBatteryIcon(mID, level) {
+        const container = document.getElementById(`battery-mft-${mID}`);
+        if (!container) return;
+
+        let iconClass = "bi-battery";
+        let colorClass = "text-muted";
+
+        if (level !== null && level !== undefined) {
+            const l = parseInt(level);
+            if (l > 80) { iconClass = "bi-battery-full"; colorClass = "text-success"; }
+            else if (l > 50) { iconClass = "bi-battery-half"; colorClass = "text-info"; }
+            else if (l > 20) { iconClass = "bi-battery-half"; colorClass = "text-warning"; }
+            else { iconClass = "bi-battery-low"; colorClass = "text-danger"; }
+        }
+
+        // Seletor específico para a parte da bateria para evitar sobrescrever a rede
+        let batteryPart = container.querySelector('.battery-part');
+        if (!batteryPart) {
+            // Se não existe a estrutura, criamos mantendo a rede
+            const networkBadge = container.querySelector('.badge');
+            container.innerHTML = `
+                <div class="d-flex flex-column align-items-center">
+                    <div class="battery-part"></div>
+                    ${networkBadge ? networkBadge.outerHTML : ''}
                 </div>
+            `;
+            batteryPart = container.querySelector('.battery-part');
+        }
 
-                <div class="card-body pt-4">
-                    <div class="d-flex align-items-center mb-3">
-                        <div class="flex-shrink-0">
-                            <div class="bg-soft-primary p-3 rounded-circle">
-                                <i class="fas fa-truck-moving text-primary"></i>
-                            </div>
-                        </div>
-                        <div class="ms-3">
-                            <h6 class="mb-0 fw-bold">${motorista}</h6>
-                            <small class="text-muted">Manifesto: #${mID}</small>
-                            <small class="text-muted d-block mt-1" id="data-registro-${mID}">
-                                <i class="bi bi-clock pe-1"></i>${data_registro}
-                            </small>
-                        </div>
-                    </div>
-
-                    <div class="row text-center bg-light rounded-3 py-2 g-0">
-                        <div class="col-6 border-end">
-                            <small class="text-muted d-block">Total</small>
-                            <span class="fw-bold" id="total-${mID}">${total}</span>
-                        </div>
-                        <div class="col-6">
-                            <small class="text-muted d-block">Baixadas</small>
-                            <span class="fw-bold text-success" id="baixadas-${mID}">${baixadas}</span>
-                        </div>
-                    </div>
-
-                    <div class="mt-3 d-flex justify-content-between align-items-center">
-                        <div class="text-primary fw-bold fs-5">
-                            <span id="percent-${mID}">${percent}</span>%
-                        </div>
-                        <button class="btn btn-sm btn-outline-dark rounded-pill">
-                            <i class="fas fa-map-marker-alt me-1"></i>Rastrear
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
+        batteryPart.innerHTML = `
+            <i class="bi ${iconClass} ${colorClass}" style="font-size: 1.2rem;"></i>
+            <small class="${colorClass}">${level !== null ? level + '%' : '--%'}</small>
         `;
-
-        grid.insertAdjacentHTML("afterbegin", novoCard);
-
-        // 🔹 Atualizar referência do card após criar
-        card = document.getElementById(`card-mft-${mID}`);
     }
 
-    // 🔹 Atualizar valores, se os elementos existirem
-    const progressBar = document.getElementById(`progress-bar-${mID}`);
-    const textBaixadas = document.getElementById(`baixadas-${mID}`);
-    const textPercent = document.getElementById(`percent-${mID}`);
-    const textTotal = document.getElementById(`total-${mID}`);
-
-    if (textTotal) textTotal.innerText = data.dados.total || 0;
-    if (progressBar) progressBar.style.width = (data.dados.porcentagem || 0) + '%';
-    if (textBaixadas) textBaixadas.innerText = data.dados.baixadas || 0;
-    if (textPercent) textPercent.innerText = data.dados.porcentagem || 0;
-
-    // 🔹 Flash visual ao atualizar card
-    if (card && card.firstElementChild) {
-        card.firstElementChild.classList.add('card-update-flash');
-        setTimeout(() => {
-            card.firstElementChild.classList.remove('card-update-flash');
-        }, 1000);
+    function updateNetworkStatus(mID, network) {
+        const el = document.getElementById(`network-mft-${mID}`);
+        if (!el) return;
+        el.innerText = (network && network !== 'unknown') ? network.toUpperCase() : '--';
+        
+        // Adiciona uma corzinha dependendo do sinal
+        if (network === '4g' || network === 'wifi') el.className = 'badge bg-success text-white border-0 mt-1';
+        else if (network === '3g') el.className = 'badge bg-info text-white border-0 mt-1';
+        else el.className = 'badge bg-light text-dark border-0 mt-1';
     }
-};
+
+    function updateLastSeen(mID, isoDate) {
+        const el = document.getElementById(`last-seen-mft-${mID}`);
+        if (!el) return;
+
+        try {
+            const date = new Date(isoDate);
+            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            el.innerHTML = `<div class="text-primary fw-bold" style="font-size: 0.9rem; text-align: center;">${timeStr}</div>`;
+        } catch (e) {
+            console.error("Erro data:", e);
+        }
+    }
+
     socket.onclose = function() {
         console.log("WS desconectado. Reconectando em 5s...");
-
         const status = document.getElementById('status-ws');
-        status.classList.replace('bg-success', 'bg-danger');
-        status.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i>DESCONECTADO';
-
+        if (status) {
+            status.classList.replace('bg-success', 'bg-danger');
+            status.innerHTML = '<i class="fas fa-exclamation-triangle me-2"></i>DESCONECTADO';
+        }
         setTimeout(conectarWebSocket, 5000);
     };
 
     socket.onerror = function(error) {
-        console.error("Erro WS:", error);
+        console.error("❌ Erro WS:", error);
     };
+}
+
+// --- FUNÇÕES DO MAPA REAL-TIME ---
+
+function abrirRastreamentoRealTime(manifestoId, motoristaNome, initialLat, initialLng) {
+    monitorandoManifestoId = manifestoId;
+    document.getElementById('rastreamento-titulo').innerText = `Rastreando: ${motoristaNome}`;
+    document.getElementById('rastreamento-mft').innerText = manifestoId;
+
+    const modal = new bootstrap.Modal(document.getElementById('modalRastreamento'));
+    modal.show();
+
+    // Aguarda o modal abrir para inicializar o mapa (Leaflet precisa do container visível)
+    document.getElementById('modalRastreamento').addEventListener('shown.bs.modal', function () {
+        initMapaRastreamento(initialLat, initialLng);
+    }, { once: true });
+
+    // Limpeza ao fechar
+    document.getElementById('modalRastreamento').addEventListener('hidden.bs.modal', function () {
+        monitorandoManifestoId = null;
+        if (mapaRastreamento) {
+            mapaRastreamento.remove();
+            mapaRastreamento = null;
+            marcadorMotorista = null;
+        }
+    }, { once: true });
+}
+
+function initMapaRastreamento(lat, lng) {
+    const parsedLat = parseFloat(lat);
+    const parsedLng = parseFloat(lng);
+    const defaultLat = !isNaN(parsedLat) ? parsedLat : -23.5505;
+    const defaultLng = !isNaN(parsedLng) ? parsedLng : -46.6333;
+
+    if (mapaRastreamento) mapaRastreamento.remove();
+
+    mapaRastreamento = L.map('mapa-rastreamento').setView([defaultLat, defaultLng], 15);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(mapaRastreamento);
+
+    // Força o Leaflet a recalcular o tamanho do container (resolve problema de mapa cinza/cortado)
+    setTimeout(() => {
+        mapaRastreamento.invalidateSize();
+    }, 200);
+
+    const iconTruck = L.icon({
+        iconUrl: 'https://cdn-icons-png.flaticon.com/512/2554/2554978.png',
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
+    });
+
+    marcadorMotorista = L.marker([defaultLat, defaultLng], { icon: iconTruck }).addTo(mapaRastreamento);
+    
+    if (isNaN(parsedLat) || isNaN(parsedLng)) {
+        marcadorMotorista.bindPopup("<b>Aguardando primeiro sinal de GPS...</b>").openPopup();
+    }
+}
+
+function atualizarPosicaoMapa(dados) {
+    if (!mapaRastreamento || !marcadorMotorista) return;
+
+    const latlng = [dados.lat, dados.lng];
+    marcadorMotorista.setLatLng(latlng);
+    mapaRastreamento.panTo(latlng);
+
+    // Atualiza Overlay do Mapa
+    document.getElementById('mapa-status-bat').innerText = dados.battery ? dados.battery + '%' : '--%';
+    document.getElementById('mapa-status-rede').innerText = dados.network || '--';
+    
+    if (dados.last_seen) {
+        const timeStr = new Date(dados.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        document.getElementById('mapa-status-visto').innerText = timeStr;
+    }
 }
 
 conectarWebSocket();

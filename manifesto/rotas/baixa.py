@@ -124,11 +124,11 @@ class RegistrarBaixaView(APIView):
                     # Demais ocorrências: Fluxo normal e direto para o TMS
                     if nf.chave_acesso:
                         # Se for NF-e normal, usa o endpoint de chaves
-                        #enviar_baixa_esl_task.delay(baixa.id) # Descomentar para enviar NFE ao TMS
+                        enviar_baixa_esl_task.delay(baixa.id) # Descomentar para enviar NFE ao TMS
                         msg_log = "NF-e agendada para TMS."
                     else:
                         # Se for Minuta (sem chave), usa o endpoint de fretes (v1/freights)
-                        #enviar_baixa_minuta_task.delay(baixa.id) # Descomentar para enviar Minuta ao TMS
+                        enviar_baixa_minuta_task.delay(baixa.id) # Descomentar para enviar Minuta ao TMS
                         msg_log = "Minuta agendada para TMS."
                 
                 print(f"BAIXA REGISTRADA: {msg_log} (Retida: {is_retida})")

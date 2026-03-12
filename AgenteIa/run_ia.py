@@ -32,7 +32,9 @@ def run_ml(img_path, watermark_text=""):
     results = model_yolo.predict(source=img_original, conf=0.5, verbose=False)
     result = results[0]
     
-    found_canhoto = False
+    valid_crops = []
+    
+    # Percorre todas as detecções para encontrar canhotos (Classe 0)
     for box in result.boxes:
         if int(box.cls[0]) == 0:  
             x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
@@ -41,19 +43,17 @@ def run_ml(img_path, watermark_text=""):
             box_w = x2 - x1
             box_h = y2 - y1
             
-            # --- TRAVA RELAXADA CONTRA FALSOS POSITIVOS (RECIBOS/TAGS) ---
-            # 1. O canhoto nao pode ser um "pontinho" na tela (menos de 3% da area total)
-            # 2. O canhoto nao pode ser absurdamente quadrado (aspect_ratio muito proximo de 1.0)
+            # --- FILTROS DE SEGURANÇA ---
             area_img = w_img * h_img
             area_box = box_w * box_h
             
+            # 1. O canhoto nao pode ser um "pontinho" na tela (menos de 3% da area total)
             if area_box < (area_img * 0.03):
-                print(f"CHECKPOINT: Falso Positivo descartado (Area muito pequena: {area_box/area_img*100:.1f}%)", flush=True)
                 continue
                 
+            # 2. O canhoto nao pode ser absurdamente quadrado (aspect_ratio muito proximo de 1.0)
             aspect_ratio = max(box_w, box_h) / min(box_w, box_h)
             if aspect_ratio < 1.2:
-                print(f"CHECKPOINT: Falso Positivo descartado (Formato muito quadrado/tag: {aspect_ratio:.2f})", flush=True)
                 continue
                 
             # Margem de Segurança 15%
@@ -64,67 +64,70 @@ def run_ml(img_path, watermark_text=""):
             crop_img = img_original[ny1:ny2, nx1:nx2]
             
             # --- Ajuste OSD de Orientacao com Tesseract OCR ---
-            # Aqui conferimos se a foto foi tirada de ponta cabeca (180 deg)
             import pytesseract
             try:
-                # OSD (Orientation and Script Detection) retorna os dados do angulo de rotacao necessario
                 osd = pytesseract.image_to_osd(crop_img)
-                angle_str = ""
+                angle = 0
                 for line in osd.split('\n'):
                     if 'Rotate: ' in line:
-                        angle_str = line.split(': ')[1].strip()
+                        angle = int(line.split(': ')[1].strip())
                         break
                         
-                if angle_str == '90':
+                if angle == 90:
                     crop_img = cv2.rotate(crop_img, cv2.ROTATE_90_CLOCKWISE)
-                elif angle_str == '180':
+                elif angle == 180:
                     crop_img = cv2.rotate(crop_img, cv2.ROTATE_180)
-                elif angle_str == '270':
+                elif angle == 270:
                     crop_img = cv2.rotate(crop_img, cv2.ROTATE_90_COUNTERCLOCKWISE)
-            except Exception as e:
-                # Se bater algum Warning/Error do Tesseract, ignoramos silenciosamente e mantemos a foto reta normal
+            except:
                 pass
             
-            # --- Adiciona Tarja Preta (Watermark) ---
-            if watermark_text:
-                h_crop, w_crop = crop_img.shape[:2]
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                
-                # Ajusta tamanho da fonte dinamicamente e calcula altura da barra
-                # Queremos que o texto ocupe no maximo a largura da imagem - 40px margem
-                text_scale = 1.0
-                text_size = cv2.getTextSize(watermark_text, font, text_scale, 1)[0]
-                
-                # Se o texto for maior que a tela, diminui a escala
-                if text_size[0] > (w_crop - 40):
-                    text_scale = (w_crop - 40) / text_size[0]
-                
-                # Limite minimo de fonte
-                text_scale = max(0.4, text_scale)
-                
-                # Pegar o height correto da fonte
-                text_size = cv2.getTextSize(watermark_text, font, text_scale, max(1, int(text_scale*2)))[0]
-                
-                # Altura da tarja tem margem top/bottom de 15px
-                bar_height = text_size[1] + 30
-                black_bar = np.zeros((bar_height, w_crop, 3), dtype=np.uint8)
-                
-                # Cor amarelo vibrante (BGR: 0, 255, 255)
-                text_color = (0, 255, 255)
-                text_x = 20
-                text_y = bar_height - 15  # baseline do texto
-                
-                cv2.putText(black_bar, watermark_text, (text_x, text_y), font, text_scale, text_color, max(1, int(text_scale*2)), cv2.LINE_AA)
-                
-                # Junta verticalmente (crop em cima, tarja embaixo)
-                crop_img = cv2.vconcat([crop_img, black_bar])
+            valid_crops.append(crop_img)
 
-            # Salva o resultado
-            print("CHECKPOINT: Salvando imagem cortada...", flush=True)
-            crop_path = img_path.replace(".jpg", "_crop.jpg")
-            cv2.imwrite(crop_path, crop_img, [cv2.IMWRITE_JPEG_QUALITY, 90])
-            print(f"SUCESSO:{crop_path}", flush=True)
-            return
+    # Se encontramos pelo menos um canhoto válido
+    if valid_crops:
+        # --- Lógica de Junção (Merge) ---
+        # 1. Padronizamos a largura de todos os recortes pela largura do maior recorte encontrado
+        max_w = max(crop.shape[1] for crop in valid_crops)
+        
+        resized_crops = []
+        for crop in valid_crops:
+            h, w = crop.shape[:2]
+            if w != max_w:
+                new_h = int(h * (max_w / w))
+                crop = cv2.resize(crop, (max_w, new_h), interpolation=cv2.INTER_LANCZOS4)
+            resized_crops.append(crop)
+            
+        # 2. Concatena verticalmente todos os canhotos
+        final_img = cv2.vconcat(resized_crops) if len(resized_crops) > 1 else resized_crops[0]
+
+        # --- Adiciona Tarja Preta (Watermark) Única no final ---
+        if watermark_text:
+            h_final, w_final = final_img.shape[:2]
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            
+            text_scale = 1.0
+            text_size = cv2.getTextSize(watermark_text, font, text_scale, 1)[0]
+            if text_size[0] > (w_final - 40):
+                text_scale = (w_final - 40) / text_size[0]
+            
+            text_scale = max(0.4, text_scale)
+            thickness = max(1, int(text_scale * 2))
+            text_size = cv2.getTextSize(watermark_text, font, text_scale, thickness)[0]
+            
+            bar_height = text_size[1] + 30
+            black_bar = np.zeros((bar_height, w_final, 3), dtype=np.uint8)
+            
+            text_color = (0, 255, 255) # Amarelo
+            cv2.putText(black_bar, watermark_text, (20, bar_height - 15), font, text_scale, text_color, thickness, cv2.LINE_AA)
+            
+            final_img = cv2.vconcat([final_img, black_bar])
+
+        # Salva o resultado final
+        crop_path = img_path.replace(".jpg", "_crop.jpg")
+        cv2.imwrite(crop_path, final_img, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        print(f"SUCESSO:{crop_path}", flush=True)
+        return
             
     print("FALHA:Nao encontrou canhoto", flush=True)
 

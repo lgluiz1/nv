@@ -120,8 +120,16 @@ from django.http import JsonResponse
 from manifesto.models import Manifesto
 
 def listar_manifestos_select(request):
+    # 1. Filtro de Segurança por Filial do Operador
+    usuario_filial = getattr(request.user.userprofile, 'filial', None) if hasattr(request.user, 'userprofile') else None
+    
     # Buscamos os últimos 50 manifestos para não sobrecarregar o select
-    manifestos = Manifesto.objects.exclude(status='CANCELADO').order_by('-data_criacao')[:50]
+    qs = Manifesto.objects.exclude(status='CANCELADO').order_by('-data_criacao')
+    
+    if usuario_filial:
+        qs = qs.filter(filial=usuario_filial)
+
+    manifestos = qs[:50]
     
     dados = [
         {

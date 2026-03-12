@@ -3,7 +3,7 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin
 from .models import (
     Manifesto, NotaFiscal, Ocorrencia, BaixaNF, 
-    HistoricoOcorrencia, ManifestoBuscaLog, WebhookEventoManifestoESL
+    HistoricoOcorrencia, ManifestoBuscaLog, WebhookEventoManifestoESL, WebhookTokenControl
 )
 from manifesto.tasks import enviar_baixa_esl_task
 
@@ -171,3 +171,10 @@ class BaixaNFAdmin(ModelAdmin):
             enviar_baixa_esl_task.delay(baixa.id)
         self.message_user(request, "Integração disparada para os itens selecionados.")
     forcar_reintegracao.short_description = "Re-enviar para TMS ESL"
+
+@admin.register(WebhookTokenControl)
+class WebhookTokenControlAdmin(ModelAdmin):
+    list_display = ("user", "total_mes_atual", "limite_mensal", "ativo", "data_atualizacao")
+    list_filter = ("ativo", "data_atualizacao")
+    search_fields = ("user__username", "user__email")
+    readonly_fields = ("data_atualizacao",)

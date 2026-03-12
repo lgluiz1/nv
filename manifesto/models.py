@@ -1,13 +1,13 @@
 # manifestos/models.py
 
 from django.db import models
-from usuarios.models import Motorista
+from django.contrib.auth.models import User
+from usuarios.models import Motorista, Filial
 from django.utils import timezone
-from usuarios.models import Filial
 from django.utils.html import format_html
 
 
-#MANIFESTOBUSCALOG SAO ARMAZENADOS TODOS OS PEDIDOS DE BUSCA DE MANIFESTO REALIZADOS PELO MOTORISTA, CASO ELE NAO INICIE VIAGEM A OUTRA VEZ Q ELE BUSCA NUMERO DO MANIFESTO ESSA TABELA DEVER SER ATUALIZADA COM O NOVO PEDIDO DE BUSCA
+# WEBHOOK EVENTO MANIFESTO - ARMAZENA TODOS OS POSTS RECEBIDOS PELO WEBHOOK
 class WebhookEventoManifestoESL(models.Model):
     origem = models.CharField(max_length=50, default="ESL")
     tipo = models.CharField(max_length=50)
@@ -20,6 +20,33 @@ class WebhookEventoManifestoESL(models.Model):
     erro = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)
+
+class WebhookTokenControl(models.Model):
+    """
+    Controla o uso mensal de tokens para o Webhook comercial.
+    Permite bloqueio manual e monitoramento de limites (soft limit).
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='webhook_control')
+    limite_mensal = models.IntegerField(default=5000, verbose_name="Limite do Plano")
+    total_mes_atual = models.IntegerField(default=0, verbose_name="Consumido no Mês")
+    mes_referencia = models.DateField(default=timezone.now, verbose_name="Mês de Referência")
+    ativo = models.BooleanField(default=True, verbose_name="Token Ativo")
+    data_atualizacao = models.DateTimeField(auto_now=True)
+
+    def reset_if_new_month(self):
+        """Zera o contador se o mês mudou."""
+        agora = timezone.now().date().replace(day=1)
+        if self.mes_referencia != agora:
+            self.total_mes_atual = 0
+            self.mes_referencia = agora
+            self.save()
+
+    def __str__(self):
+        return f"Controle: {self.user.username} - {self.total_mes_atual}/{self.limite_mensal}"
+
+    class Meta:
+        verbose_name = "Controle de Token Webhook"
+        verbose_name_plural = "Controle de Tokens Webhook"
 
 class ManifestoBuscaLog(models.Model):
     STATUS_CHOICES = (
@@ -79,6 +106,7 @@ class Ocorrencia(models.Model):
 # 2. Manifesto de Carga
 class Manifesto(models.Model):
     STATUS_CHOICES = [
+        ('AGUARDANDO', 'Aguardando'),
         ('EM_TRANSPORTE', 'Em Transporte'),
         ('FINALIZADO', 'Finalizado'),
         ('CANCELADO', 'Cancelado'),
@@ -99,6 +127,13 @@ class Manifesto(models.Model):
         related_name='manifestos',
         verbose_name="Motorista"
     )
+    
+    # NOVAS: Informações de Monitoramento por Manifesto (Específicas da Viagem)
+    ultima_bateria = models.IntegerField(null=True, blank=True, verbose_name="Última Bateria (%)")
+    ultimo_acesso = models.DateTimeField(null=True, blank=True, verbose_name="Último Acesso")
+    ultima_rede = models.CharField(max_length=20, null=True, blank=True, verbose_name="Tipo de Rede")
+    ultima_lat = models.FloatField(null=True, blank=True, verbose_name="Última Latitude")
+    ultima_lng = models.FloatField(null=True, blank=True, verbose_name="Última Longitude")
 
     filial = models.ForeignKey(
         Filial,
@@ -147,6 +182,7 @@ class NotaFiscal(models.Model):
         ('TRANSFERENCIA', 'Transferência'),
         ('DESPACHO', 'Despacho'),
         ('ENTREGA', 'Entrega'),
+        ('COLETA', 'Coleta'),
         ('RETIRADA', 'Retirada'),
         ('OUTROS', 'Outros'),
     ]
@@ -167,6 +203,13 @@ class NotaFiscal(models.Model):
         choices=TIPO_OPERACAO_CHOICES, 
         default='ENTREGA', null=True, blank=True
     )
+    
+    # Campo para Coletas
+    numero_coleta = models.CharField(max_length=50, null=True, blank=True, verbose_name="Número da Coleta")
+    
+    # Campos para CT-e (Usado quando não há NF-e ou para Minutas)
+    numero_cte = models.CharField(max_length=50, null=True, blank=True, verbose_name="Número do CT-e")
+    chave_cte = models.CharField(max_length=44, null=True, blank=True, verbose_name="Chave do CT-e")
     STATUS_CHOICES = [
         ('PENDENTE', 'Pendente'),
         ('BAIXADA', 'Baixada/Entregue'),
@@ -181,7 +224,17 @@ class NotaFiscal(models.Model):
         verbose_name = "Nota Fiscal"
         verbose_name_plural = "Notas Fiscais"
         # RESTRIÇÃO CHAVE: Garante que a NF-e não seja duplicada no mesmo manifesto
-        indexes = [models.Index(fields=['chave_acesso'])]
+        indexes = [
+            models.Index(fields=['chave_acesso']),
+            models.Index(fields=['numero_nota']),
+        ]
+
+    # Helper para evitar N+1 no template ao buscar última baixa
+    @property
+    def ultima_baixa(self):
+        if hasattr(self, '_prefetched_ultima_baixa'):
+            return self._prefetched_ultima_baixa[0] if self._prefetched_ultima_baixa else None
+        return self.baixa_info.all().last()
 
 
 # 4. Histórico de Ocorrências (Rastreamento)
