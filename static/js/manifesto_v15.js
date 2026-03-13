@@ -83,10 +83,16 @@ async function sincronizarBaixasPendentes() {
             formData.append(key, valor || '');
         }
         
-        formData.append('chave_acesso', item.chaveNF);
-        formData.append('numero_nota', item.numeroNF);
-        formData.append('manifesto_id', item.mID);
+        formData.append('chave_acesso', item.chaveNF || '');
+        formData.append('numero_nota', item.numeroNF || '');
+        formData.append('manifesto_id', item.mID || '');
         
+        // Se for uma coleta, garante que o tipo_operacao e nota_id_tms sejam enviados
+        if (item.campos && item.campos.tipo_operacao === 'COLETA') {
+            formData.append('tipo_operacao', 'COLETA');
+            formData.append('nota_id_tms', item.campos.nota_id_tms || item.chaveNF);
+        }
+
         if (item.foto) {
             formData.append('foto', item.foto, `mft_${item.mID}_${item.chaveNF}.jpg`);
         }
@@ -358,10 +364,11 @@ async function atualizarListaViva(numeroManifesto) {
             'TRANSFERENCIA': { icon: 'bi-box-arrow-right', color: 'primary', label: 'Registrar Chegada', code: '98' },
             'DESPACHO':      { icon: 'bi-airplane', color: 'info', label: 'Confirmar Despacho', code: '50' },
             'RETIRADA':      { icon: 'bi-box-arrow-in-left', color: 'warning', label: 'Confirmar Retirada', code: '51' },
-            'ENTREGA':       { icon: 'bi-truck', color: 'success', label: 'Dar Baixa', code: '1' }
+            'ENTREGA':       { icon: 'bi-truck', color: 'success', label: 'Dar Baixa', code: '1' },
+            'COLETA':        { icon: 'bi-box-seam', color: 'dark', label: 'Registrar Coleta', code: '1' }
         };
 
-        const grupos = { 'TRANSFERENCIA': [], 'DESPACHO': [], 'RETIRADA': [], 'ENTREGA': [] };
+        const grupos = { 'TRANSFERENCIA': [], 'DESPACHO': [], 'RETIRADA': [], 'ENTREGA': [], 'COLETA': [] };
         let totalFinalizadas = 0;
         let htmlConcluidos = '';
 
@@ -483,8 +490,8 @@ function gerarCardHTML(nf, config, baixada, sincronizando = false) {
     const icone = sincronizando ? 'bi-cloud-arrow-up' : (baixada ? 'bi-check-circle-fill' : config.icon);
     
     const chave = nf.chave_acesso || '';
-    const numero = nf.numero_nota || '';
     const tipo = nf.tipo_operacao || 'ENTREGA';
+    const numero = (tipo === 'COLETA') ? (nf.numero_coleta || nf.numero_nota || '') : (nf.numero_nota || '');
 
     // Classe especial para o card que está subindo
     const classeSincronizando = sincronizando ? 'opacity-75 shadow-none border-dashed' : '';
@@ -496,7 +503,7 @@ function gerarCardHTML(nf, config, baixada, sincronizando = false) {
         data-numero="${numero}">
             <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-start">
-                    <h6 class="fw-bold mb-1">📝NF ${numero}</h6>
+                    <h6 class="fw-bold mb-1">${tipo === 'COLETA' ? '📦COLETA' : '📝NF'} ${numero}</h6>
                     <span>
                         <i class="bi ${icone} text-${cor} ${sincronizando ? 'animate__animated animate__flash animate__infinite' : ''}" 
                            style="font-size: 1.2rem;"></i>
@@ -515,6 +522,8 @@ function gerarCardHTML(nf, config, baixada, sincronizando = false) {
                         onclick="${
                             tipo === 'ENTREGA' 
                             ? `abrirModalBaixa('${numero}', '${chave}', '${tipo}')` 
+                            : tipo === 'COLETA'
+                            ? `abrirModalColeta('${numero}', '${nf.numero_coleta || numero}', '${tipo}')`
                             : tipo === 'TRANSFERENCIA'
                             ? `confirmarTransferenciaIndividual('${numero}', '${chave}')`
                             : `abrirModalPerguntaOperacional('${numero}', '${chave}', '${tipo}')`
@@ -1653,6 +1662,113 @@ async function confirmarTransferenciaIndividual(numeroNota, chave) {
     if (confirmar) {
         // Chama a mesma lógica de execução enviando is_completo=true (pois 098 é fixo)
         executarBaixaOp(chave, 'TRANSFERENCIA', true);
+    }
+}
+
+// =====================================================
+// LÓGICA DE COLETA (NOVO FLUXO)
+// =====================================================
+
+function abrirModalColeta(numero, pickId, tipo) {
+    console.log("📦 Abrindo modal de Coleta:", numero);
+    const modalColeta = new bootstrap.Modal(document.getElementById('modalColeta'));
+    const btnSim = document.getElementById('btn-coleta-sim');
+    const btnNao = document.getElementById('btn-coleta-nao');
+
+    // Remove listeners antigos para evitar disparos duplos
+    const novoBtnSim = btnSim.cloneNode(true);
+    btnSim.parentNode.replaceChild(novoBtnSim, btnSim);
+    
+    const novoBtnNao = btnNao.cloneNode(true);
+    btnNao.parentNode.replaceChild(novoBtnNao, btnNao);
+
+    novoBtnSim.onclick = () => {
+        modalColeta.hide();
+        salvarRegistroColeta(pickId, '1', 'Coleta realizada com sucesso');
+    };
+
+    novoBtnNao.onclick = () => {
+        modalColeta.hide();
+        salvarRegistroColeta(pickId, '04', 'Coleta não realizada');
+    };
+
+    modalColeta.show();
+}
+
+async function salvarRegistroColeta(pickId, codigoOcorrencia, observacao) {
+    atualizarStatusUI('loading', 'Registrando Coleta...', 'Aguarde um momento.');
+    statusModal.show();
+
+    let lat = 0, lng = 0;
+    try {
+        const pos = await obterPosicaoGPS();
+        lat = pos.coords.latitude;
+        lng = pos.coords.longitude;
+    } catch (e) {
+        console.warn("GPS não capturado para coleta.");
+    }
+
+    const formData = new FormData();
+    formData.append('tipo_operacao', 'COLETA');
+    formData.append('nota_id_tms', pickId);
+    formData.append('ocorrencia_codigo', codigoOcorrencia);
+    formData.append('latitude', lat);
+    formData.append('longitude', lng);
+    formData.append('observacao_app', observacao);
+    formData.append('data_registro', new Date().toISOString());
+    formData.append('manifesto_id', manifestoAtual);
+
+    try {
+        const response = await authFetch(`${API_BASE}manifesto/registrar-baixa/`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response && response.ok) {
+            atualizarStatusUI('success', '✅ Coleta Registrada', 'Informações enviadas com sucesso.');
+            setTimeout(() => {
+                statusModal.hide();
+                atualizarListaViva(manifestoAtual);
+            }, 1500);
+        } else {
+            throw new Error('Falha no servidor');
+        }
+    } catch (err) {
+        console.warn("Coleta salva offline (IndexedDB)");
+        try {
+            const db = await abrirDB();
+            const tx = db.transaction('baixas_pendentes', 'readwrite');
+            const store = tx.objectStore('baixas_pendentes');
+            
+            const objOffline = {
+                id: Date.now().toString(),
+                numeroNF: pickId,
+                chaveNF: '', // Coleta não usa chave de 44 dígitos
+                mID: manifestoAtual,
+                campos: {
+                    tipo_operacao: 'COLETA',
+                    nota_id_tms: pickId,
+                    ocorrencia_codigo: codigoOcorrencia,
+                    latitude: lat,
+                    longitude: lng,
+                    observacao_app: observacao,
+                    data_registro: new Date().toISOString()
+                },
+                foto: null
+            };
+
+            await store.put(objOffline);
+            
+            await atualizarIconeNuvem();
+            
+            atualizarStatusUI('warning', '📡 Modo Offline', 'Sinal fraco. A coleta será sincronizada depois.');
+            setTimeout(() => {
+                statusModal.hide();
+                atualizarListaViva(manifestoAtual);
+            }, 2000);
+        } catch (dbErr) {
+            atualizarStatusUI('error', '❌ Erro Crítico', 'Não foi possível salvar a coleta.');
+        }
     }
 }
 

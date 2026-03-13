@@ -21,8 +21,10 @@ MAPA_JSON = {
 
 def validar_motorista_request(numero_manifesto):
     """Retorna o CPF do motorista vinculado ao manifesto no Endpoint 1"""
-    TOKEN = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
-    URL = f"https://quickdelivery.eslcloud.com.br/api/analytics/reports/2972/data"
+    from configuracao.utils import get_config
+    config = get_config()
+    TOKEN = config.token_analytics
+    URL = f"https://{config.dominio_esl}/api/analytics/reports/{config.report_validacao}/data"
     payload = {
         "search": {
             "manifests": {
@@ -42,8 +44,10 @@ def validar_motorista_request(numero_manifesto):
 
 def capturar_notas_unicas(manifesto_id):
     """Percorre a paginação da ESL e filtra as chaves únicas de NF-e"""
-    TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
-    url = f"https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
+    from configuracao.utils import get_config
+    config = get_config()
+    TOKEN = config.token_invoices
+    url = f"https://{config.dominio_esl}/api/invoice_occurrences"
     headers = {"Authorization": f"Bearer {TOKEN}"}
     
     notas_unicas = {}
@@ -91,8 +95,10 @@ def capturar_notas_unicas(manifesto_id):
 
 def enriquecer_dados_api(chave_nfe, numero_nfe):
     """Busca detalhes (Nome, Endereço) de uma nota específica"""
-    TOKEN = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
-    URL = f"https://quickdelivery.eslcloud.com.br/api/analytics/reports/9873/data"
+    from configuracao.utils import get_config
+    config = get_config()
+    TOKEN = config.token_analytics
+    URL = f"https://{config.dominio_esl}/api/analytics/reports/{config.report_busca_nfe}/data"
     
     payload = {
         "search": {
@@ -120,8 +126,10 @@ def enriquecer_dados_api(chave_nfe, numero_nfe):
 # =====================================================
 @shared_task(bind=True, max_retries=3, default_retry_delay=10)
 def iniciar_transporte_manifesto_tms_task(self, numero_manifesto):
-    TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
-    URL = "https://quickdelivery.eslcloud.com.br/graphql"
+    from configuracao.utils import get_config
+    config = get_config()
+    TOKEN = config.token_invoices
+    URL = f"https://{config.dominio_esl}/graphql"
 
     HEADERS = {
         "Content-Type": "application/json",
@@ -232,11 +240,13 @@ def buscar_manifesto_completo_task(self, log_id):
         log = ManifestoBuscaLog.objects.select_related('motorista').get(id=log_id)
         numero_visual = log.numero_manifesto
         motorista = log.motorista
-        token_geral = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
+        from configuracao.utils import get_config
+        config = get_config()
+        token_geral = config.token_analytics
         headers_geral = {"Content-Type": "application/json", "Authorization": f"Bearer {token_geral}"}
 
         # --- ETAPA 1: VALIDAR MOTORISTA E PEGAR ID INTERNO ---
-        url_valida = "https://quickdelivery.eslcloud.com.br/api/analytics/reports/2972/data"
+        url_valida = f"https://{config.dominio_esl}/api/analytics/reports/{config.report_validacao}/data"
         payload_busca = {
             "search": {
                 "manifests": {
@@ -296,8 +306,8 @@ def buscar_manifesto_completo_task(self, log_id):
         log.save()
 
         # --- ETAPA 2: CAPTURAR LISTA E CLASSIFICAR TIPO (COM SUPORTE A FREIGHT_ID) ---
-        token_notas = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
-        url_notas = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
+        token_notas = config.token_invoices
+        url_notas = f"https://{config.dominio_esl}/api/invoice_occurrences"
         
         params_notas = {"manifest_id": str(id_interno_esl), "per": 20}
         start_cursor = None
@@ -463,8 +473,10 @@ def enviar_baixa_esl_task(self, baixa_id):
     import json
     import pytz
 
-    TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
-    URL_ESL = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
+    from configuracao.utils import get_config
+    config = get_config()
+    TOKEN = config.token_invoices
+    URL_ESL = f"https://{config.dominio_esl}/api/invoice_occurrences"
 
     try:
         # Adicionado select_related para o manifesto para pegar o ID interno
@@ -574,8 +586,8 @@ def enviar_baixa_esl_task(self, baixa_id):
 
         # Se for erro de validação (como ID de manifesto inexistente ou chave inválida)
         if status and 400 <= status < 500:
-            # Assumindo que você tenha essa task de e-mail, se não, pode comentar
-            enviar_email_erro_tms_task.delay(baixa_id, msg_erro)
+            from configuracao.utils import notificar_falha_tms
+            notificar_falha_tms(baixa_id, msg_erro, "enviar_baixa_esl_task")
             return f"Erro de validação ESL: {msg_erro}"
 
         # Retry para erros de servidor (5xx)
@@ -609,8 +621,10 @@ def finalizar_manifesto_tms_task(self, manifesto_id):
         data_fim = manifesto.data_finalizacao or timezone.now()
         data_iso = data_fim.astimezone(fuso_br).strftime('%Y-%m-%dT%H:%M:%S-03:00')
 
-        url_graphql = "https://quickdelivery.eslcloud.com.br/graphql"
-        token = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
+        from configuracao.utils import get_config
+        config = get_config()
+        url_graphql = f"https://{config.dominio_esl}/graphql"
+        token = config.token_analytics
 
         # 2. Mutation simplificada (Removido closingKm do retorno e do input se possível)
         mutation = """
@@ -678,7 +692,9 @@ def enviar_baixa_minuta_task(self, baixa_id):
     from django.utils import timezone
 
     # Configurações de API
-    TOKEN = "jziCXNF8xTasaEGJGxysrTFXtDRUmdobh9HCGHiwmEzaENWLiaddLA"
+    from configuracao.utils import get_config
+    config = get_config()
+    TOKEN = config.token_invoices
     
     try:
         # Busca a baixa e a nota relacionada
@@ -747,6 +763,9 @@ def enviar_baixa_minuta_task(self, baixa_id):
         baixa.log_erro_tms = msg_falha[:500]
         baixa.integrado_tms = False
         baixa.save()
+        
+        from configuracao.utils import notificar_falha_tms
+        notificar_falha_tms(baixa_id, msg_falha, "enviar_baixa_minuta_task")
         
         # Tenta novamente em caso de erro de servidor (5xx)
         raise self.retry(exc=e, countdown=60)
@@ -819,12 +838,20 @@ def processar_webhook_manifesto_task(self, event_id):
             if not num_mani:
                 raise Exception("Número do manifesto não informado no payload.")
 
+            # Busca o manifesto existente
+            manifesto_obj = Manifesto.objects.filter(numero_manifesto=num_mani).first()
+            
+            # Se não existe, cria como AGUARDANDO. Se existe, preserva o status EM_TRANSPORTE
+            status_novo = 'AGUARDANDO'
+            if manifesto_obj and manifesto_obj.status == 'EM_TRANSPORTE':
+                status_novo = 'EM_TRANSPORTE'
+
             manifesto_obj, _ = Manifesto.objects.update_or_create(
                 numero_manifesto=num_mani,
                 defaults={
                     'motorista': motorista_obj,
                     'filial': filial_obj,
-                    'status': 'AGUARDANDO',
+                    'status': status_novo,
                     'manifesto_id_tms': mani_data.get('id_tms'),
                 }
             )
@@ -836,18 +863,54 @@ def processar_webhook_manifesto_task(self, event_id):
                 dest = item.get('destinatario', {})
                 endereco = f"{dest.get('logradouro', '')}, {dest.get('numero', '')} - {dest.get('bairro', '')} ({dest.get('cidade', '')}/{dest.get('uf', '')})".upper()
 
+                # Inteligência para Itens sem Chave (Coletas / Webhook TMS)
+                tipo_item = item.get('tipo', 'ENTREGA')
+                numero_item = str(item.get('numero_item', ''))
+                id_tms = item.get('id_tms')
+                
+                # Normalização de chaves (Transforma '' ou 'null' em None)
+                def normalizar_valor(val):
+                    if val is None: return None
+                    v = str(val).strip()
+                    return None if v.lower() in ['', 'null', 'none'] else v
+
+                chave_nfe = normalizar_valor(item.get('chave_item'))
+                chave_cte = normalizar_valor(item.get('chave_cte'))
+                num_coleta = normalizar_valor(item.get('numero_coleta'))
+
+                # Se for COLETA, numero_item com letras (ex: ITEM007) geralmente é ruído do JSON.
+                # Vamos priorizar numero_coleta real ou id_tms.
+                if tipo_item == 'COLETA' and not num_coleta:
+                    if numero_item.isdigit():
+                        num_coleta = numero_item
+                    else:
+                        # Se numero_item tem letras, usamos o id_tms como fallback de número
+                        num_coleta = str(id_tms) if id_tms else None
+
+                # Busca o registro existente de forma segura (Prioriza ID do TMS se disponível)
+                # Isso evita criar duplicatas quando o item não tem chave (Chave=None)
+                filtros_busca = {'manifesto': manifesto_obj}
+                if id_tms:
+                    filtros_busca['freight_id_tms'] = str(id_tms)
+                elif chave_nfe:
+                    filtros_busca['chave_acesso'] = chave_nfe
+                else:
+                    # Fallback para número e tipo (Único no manifesto)
+                    filtros_busca['numero_nota'] = numero_item
+                    filtros_busca['tipo_operacao'] = tipo_item
+
                 NotaFiscal.objects.update_or_create(
-                    manifesto=manifesto_obj,
-                    numero_nota=str(item.get('numero_item')),
-                    chave_acesso=item.get('chave_item'), 
+                    **filtros_busca,
                     defaults={
                         'destinatario': str(dest.get('nome', 'NÃO INFORMADO')).upper(),
                         'endereco_entrega': endereco,
-                        'tipo_operacao': item.get('tipo', 'ENTREGA'),
-                        'freight_id_tms': item.get('id_tms'),
-                        'numero_coleta': item.get('numero_coleta'),
-                        'numero_cte': item.get('numero_cte'),
-                        'chave_cte': item.get('chave_cte')
+                        'tipo_operacao': tipo_item,
+                        'freight_id_tms': str(id_tms) if id_tms else None,
+                        'numero_nota': numero_item,
+                        'chave_acesso': chave_nfe,
+                        'numero_coleta': num_coleta,
+                        'numero_cte': normalizar_valor(item.get('numero_cte')),
+                        'chave_cte': chave_cte
                     }
                 )
                 count_notas += 1
@@ -897,4 +960,119 @@ def processar_webhook_manifesto_task(self, event_id):
         except Exception as logger_err:
             logger.error(f"Falha ao registrar log de erro do webhook: {logger_err}")
             
+        raise self.retry(exc=e, countdown=60)
+
+@shared_task(bind=True, max_retries=3)
+def enviar_coleta_esl_task(self, baixa_id):
+    """
+    Envia o registro de coleta para o TMS da ESL.
+    Suporta Roteamento Inteligente:
+    - Se ID numérico: usa API V1 Picks (/api/v1/picks)
+    - Se ID alfanumérico: usa API V2 (/api/invoice_occurrences)
+    """
+    from manifesto.models import BaixaNF
+    import requests
+    import pytz
+    import json
+    from django.conf import settings
+    from django.utils import timezone
+
+    from configuracao.utils import get_config
+    config = get_config()
+    TOKEN = config.token_invoices
+    
+    try:
+        baixa = BaixaNF.objects.select_related('nota_fiscal', 'ocorrencia', 'nota_fiscal__manifesto').get(id=baixa_id)
+        nf = baixa.nota_fiscal
+        manifesto = nf.manifesto
+        
+        # Identificador: Prioriza numero_coleta (confirmado pelo usuário)
+        identificador = (nf.numero_coleta or nf.freight_id_tms or nf.numero_nota or "").strip()
+        
+        if not identificador:
+            msg = "Erro: Nenhum identificador de coleta encontrado (numero_coleta/freight_id_tms)."
+            baixa.integrado_tms = False
+            baixa.log_erro_tms = msg
+            baixa.save()
+            return msg
+
+        # 1. Ajuste de Horário (Brasília GMT-3)
+        fuso_br = pytz.timezone('America/Sao_Paulo')
+        data_ocorrencia_str = baixa.data_baixa.astimezone(fuso_br).strftime('%Y-%m-%d %H:%M:%S')
+        data_iso_v2 = baixa.data_baixa.astimezone(fuso_br).strftime('%Y-%m-%dT%H:%M:%S.000-03:00')
+
+        # 2. LÓGICA DE ROTEAMENTO (V1 vs V2)
+        is_numeric = identificador.isdigit()
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {TOKEN}"
+        }
+
+        if is_numeric:
+            # --- FLUXO V1 (PICKS) ---
+            url = f"https://quickdelivery.eslcloud.com.br/api/v1/picks/{identificador}/pick_occurrences"
+            payload = {
+                "pick_occurrence": {
+                    "receiver": baixa.recebedor or "Nao identificado",
+                    "document_number": baixa.documento_recebedor or "",
+                    "comments": f"Coleta via App - Obs: {baixa.observacao or ''}",
+                    "occurrence_at": data_iso_v2,
+                    "latitude": float(baixa.latitude) if baixa.latitude else 0.0,
+                    "longitude": float(baixa.longitude) if baixa.longitude else 0.0,
+                    "occurrence": {
+                        "code": int(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else 1
+                    }
+                }
+            }
+            logger.info(f"Enviando Coleta V1 (Picks): {url}")
+        else:
+            # --- FLUXO V2 (INVOICE OCCURRENCES - Mais flexível para alfanuméricos) ---
+            url = "https://quickdelivery.eslcloud.com.br/api/invoice_occurrences"
+            payload = {
+                "invoice_occurrence": {
+                    "occurrence_at": data_iso_v2,
+                    "occurrence": {
+                        "code": int(baixa.ocorrencia.codigo_tms)
+                    },
+                    "invoice": {
+                        "number": identificador
+                    },
+                    "manifest": {
+                        "id": int(manifesto.manifesto_id_tms) if manifesto.manifesto_id_tms else None
+                    },
+                    "comments": f"Coleta via App (Alfanumérico: {identificador})"
+                }
+            }
+            logger.info(f"Enviando Coleta V2 (Invoice Occurrences) para ID Alfanumérico: {identificador}")
+
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        
+        if response.status_code in [200, 201]:
+            baixa.processado_tms = True
+            baixa.integrado_tms = True
+            baixa.data_integracao = timezone.now()
+            baixa.log_erro_tms = f"Sucesso: Coleta registrada ({'V1' if is_numeric else 'V2'}: {identificador})"
+            baixa.payload_enviado = payload
+            baixa.save()
+            return f"Coleta {identificador} enviada com sucesso ao ESL ({'V1' if is_numeric else 'V2'})."
+        else:
+            msg_erro = f"Status: {response.status_code} - {response.text}"
+            baixa.processado_tms = True
+            baixa.integrado_tms = False
+            baixa.log_erro_tms = msg_erro[:500]
+            baixa.payload_enviado = payload
+            baixa.save()
+            
+            from configuracao.utils import notificar_falha_tms
+            notificar_falha_tms(baixa_id, msg_erro, "enviar_coleta_esl_task")
+            
+            # Se for 404 e tentou V1, pode ser que o número precise de V2 mesmo sendo numérico
+            if response.status_code == 404 and is_numeric:
+                 logger.warning(f"ID numérico {identificador} deu 404 na V1. Tentando V2 em breve via retry.")
+            
+            raise Exception(f"Erro no ESL (Coleta): {msg_erro}")
+
+    except Exception as e:
+        logger.error(f"Erro enviar_coleta_esl_task ({baixa_id}): {str(e)}")
         raise self.retry(exc=e, countdown=60)

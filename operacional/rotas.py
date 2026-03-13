@@ -10,10 +10,6 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 
 
-TOKEN = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
-URL_TMS = "https://quickdelivery.eslcloud.com.br/api/analytics/reports/9873/data"
-
-
 @csrf_exempt
 @require_http_methods(["POST"])
 def buscar_e_importar_nfe(request):
@@ -51,9 +47,10 @@ def buscar_e_importar_nfe(request):
 
         # 2. BUSCA NO TMS E FILTRAGEM
         if not manifesto_id:
-            # URL e Token que você testou no script raw
-            URL_TMS = "https://quickdelivery.eslcloud.com.br/api/analytics/reports/9873/data"
-            TOKEN = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
+            from configuracao.utils import get_config
+            config = get_config()
+            URL_TMS = f"https://{config.dominio_esl}/api/analytics/reports/{config.report_busca_nfe}/data"
+            TOKEN = config.token_analytics
 
             payload = {
                 "search": {
@@ -160,8 +157,12 @@ def sincronizar_nota_tms_view(request, nota_id):
                 'mensagem': 'Esta nota ainda não possui uma baixa registrada pelo motorista.'
             }, status=400)
 
-        # 3. Dispara a Task do Celery que faz o envio real e envia e-mail em caso de erro
-        enviar_baixa_esl_task.delay(baixa.id)
+        # 3. Dispara a Task do Celery correta (Entrega vs Coleta)
+        if nota.tipo_operacao == 'COLETA':
+            from manifesto.tasks import enviar_coleta_esl_task
+            enviar_coleta_esl_task.delay(baixa.id)
+        else:
+            enviar_baixa_esl_task.delay(baixa.id)
 
         return JsonResponse({
             'sucesso': True,

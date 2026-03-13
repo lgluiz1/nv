@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'mobile',
     'operacional',
     'AgenteIa',
+    'configuracao',
 ]
 # Configurar Redis como channel layer
 # settings.py ou celery.py

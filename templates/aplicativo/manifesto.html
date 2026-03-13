@@ -1037,6 +1037,39 @@
         </div>
     </div>
 
+    <!-- MODAL ESPECÍFICO PARA COLETA (SIM/NÃO) -->
+    <div class="modal fade" id="modalColeta" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 20px;">
+                <div class="modal-header bg-dark text-white" style="border-radius: 20px 20px 0 0;">
+                    <h5 class="modal-title fw-bold" id="modal-coleta-titulo">📦 Registro de Coleta</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4 text-center">
+                    <div class="mb-4">
+                        <i class="bi bi-question-circle text-primary" style="font-size: 4rem;"></i>
+                    </div>
+                    <h4 class="fw-bold mb-3">A coleta foi realizada?</h4>
+                    <p class="text-muted mb-4">Confirme se os itens foram coletados com sucesso no cliente.</p>
+                    
+                    <div class="d-grid gap-3">
+                        <button type="button" id="btn-coleta-sim" class="btn btn-success btn-lg py-3 fw-bold shadow-sm">
+                            <i class="bi bi-check-circle me-2"></i> SIM, COLETEI
+                        </button>
+                        <button type="button" id="btn-coleta-nao" class="btn btn-outline-danger btn-lg py-3 fw-bold">
+                            <i class="bi bi-x-circle me-2"></i> NÃO COLETEI
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 justify-content-center pb-4">
+                    <button type="button" class="btn btn-link text-muted text-decoration-none fw-bold" data-bs-dismiss="modal">
+                        Cancelar e Voltar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <div class="modal fade" id="modalDetalhes" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">

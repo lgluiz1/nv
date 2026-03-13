@@ -4,7 +4,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from manifesto.models import NotaFiscal, BaixaNF, Ocorrencia
-from django.db import transaction
+from django.db import transaction, models
+from django.db.models import Q
 from django.utils import timezone
 from manifesto.tasks import enviar_baixa_esl_task, enviar_baixa_minuta_task
 from ftplib import FTP
@@ -17,7 +18,7 @@ def upload_via_ftp(imagem_bytes, nome_arquivo):
         from ftplib import FTP
         from io import BytesIO
 
-        ftp = FTP(settings.FTP_HOST)
+        ftp = FTP(settings.FTP_HOST, timeout=30)
         ftp.login(user=settings.FTP_USER, passwd=settings.FTP_PASS)
         
         # CAMINHO AJUSTADO conforme seu print/link:
@@ -47,13 +48,21 @@ class RegistrarBaixaView(APIView):
         numero_nota = request.data.get('numero_nota') # 👈 Pegamos o número para caso de Minuta
         codigo_tms = request.data.get('ocorrencia_codigo')
         foto_arquivo = request.FILES.get('foto')
-        numero_mft = request.data.get('manifest_id') 
+        # Tenta pegar das duas formas para evitar erro de digitação/mismatch
+        numero_mft = request.data.get('manifesto_id') or request.data.get('manifest_id')
+
+        # --- NOVOS DADOS PARA COLETA ---
+        tipo_operacao = request.data.get('tipo_operacao')
+        nota_id_tms = request.data.get('nota_id_tms')
+
+        # LOG DE DEBUG NO BACKEND
+        print(f"--- REGISTRAR BAIXA ---")
+        print(f"Tipo: {tipo_operacao}, Nota/Coleta: {numero_nota or nota_id_tms}, Mft: {numero_mft}")
         
-        # --- NOVOS DADOS DA MODIFICAÇÃO ---
-        # O JS envia nota_retida como string 'true' ou 'false'
+        # --- DADOS PADRÃO ---
         is_retida = request.data.get('nota_retida') == 'true'
         observacao_app = request.data.get('observacao_retida', '')
-        
+
         try:
             with transaction.atomic():
                 # --- BUSCA INTELIGENTE (HÍBRIDA) ---
@@ -62,6 +71,8 @@ class RegistrarBaixaView(APIView):
                 
                 if nota_id:
                     filtros['id'] = nota_id
+                elif nota_id_tms:
+                    filtros['freight_id_tms'] = nota_id_tms
                 elif chave_acesso and chave_acesso != "null" and chave_acesso != "":
                     filtros['chave_acesso'] = chave_acesso
                 else:
@@ -76,9 +87,39 @@ class RegistrarBaixaView(APIView):
                         filtros['manifesto__status'] = 'EM_TRANSPORTE'
 
                 # Tenta encontrar a nota ou minuta
-                nf = NotaFiscal.objects.get(**filtros)
+                if tipo_operacao == 'COLETA':
+                    # Busca específica para coleta: prioriza ID do TMS e filtra por tipo
+                    id_coleta = nota_id_tms if nota_id_tms else numero_nota
+                    print(f"Buscando Coleta: {id_coleta} no manifesto {numero_mft}")
+                    
+                    query_coleta = (Q(numero_coleta=id_coleta) | Q(numero_nota=id_coleta) | Q(freight_id_tms=id_coleta))
+                    nf = NotaFiscal.objects.filter(
+                        query_coleta,
+                        tipo_operacao='COLETA',
+                        manifesto__numero_manifesto=str(numero_mft)
+                    ).first()
+                    
+                    if not nf:
+                        raise NotaFiscal.DoesNotExist(f"Coleta {id_coleta} não encontrada.")
+                else:
+                    nf = NotaFiscal.objects.get(**filtros)
 
-                ocorrencia = Ocorrencia.objects.get(codigo_tms=codigo_tms) 
+                try:
+                    # Busca exata (ex: '01' ou '1')
+                    ocorrencia = Ocorrencia.objects.get(codigo_tms=codigo_tms)
+                except Ocorrencia.DoesNotExist:
+                    # Tenta o inverso: se mandou '01' busca '1', se mandou '1' busca '01'
+                    if codigo_tms.isdigit():
+                        cod_int = int(codigo_tms)
+                        # Tenta as duas formas mais comuns
+                        ocorrencia = Ocorrencia.objects.filter(
+                            Q(codigo_tms=str(cod_int)) | Q(codigo_tms=f"{cod_int:02d}")
+                        ).first()
+                        
+                        if not ocorrencia:
+                            raise Ocorrencia.DoesNotExist(f"Ocorrência {codigo_tms} não encontrada em nenhuma forma.")
+                    else:
+                        raise
 
                 # --- LÓGICA DE UPLOAD (SÓ SE NÃO FOR NOTA RETIDA) ---
                 url_final_foto = None
@@ -90,10 +131,23 @@ class RegistrarBaixaView(APIView):
 
                 # --- REGISTRO DA BAIXA ---
                 data_manual = request.data.get('data_baixa')
+                lat = request.data.get('latitude')
+                lng = request.data.get('longitude')
                 
+                # Saneamento para campos decimais (Django não aceita "" em DecimalField)
+                lat = lat if lat and lat != "null" and lat != "undefined" else None
+                lng = lng if lng and lng != "null" and lng != "undefined" else None
+
                 # Buscamos a baixa existente ANTES de criar para saber a data_baixa
                 baixa_existente = BaixaNF.objects.filter(nota_fiscal=nf).first()
                 
+                # Flag de backup: verifica se deve armazenar a foto original
+                from configuracao.utils import get_config
+                config_backup = get_config()
+                
+                # Guarda a URL original do backup ANTES de qualquer update (proteção)
+                backup_original_existente = baixa_existente.comprovante_original_url if baixa_existente else None
+
                 # Lógica: se tem data manual, usa ela. Se não, se já existe baixa, mantém a data dela. Se é nova, usa agora.
                 data_final_baixa = data_manual if data_manual else (baixa_existente.data_baixa if baixa_existente else timezone.now())
 
@@ -103,33 +157,50 @@ class RegistrarBaixaView(APIView):
                         'tipo': 'ENTREGA' if ocorrencia.tipo == 'ENTREGA' else 'OCORRENCIA',
                         'ocorrencia': ocorrencia,
                         'comprovante_foto_url': url_final_foto, 
+                        'comprovante_original_url': url_final_foto if config_backup.armazenar_foto_backup else '', # 👈 Controlado pela flag
                         'recebedor': request.data.get('recebedor') if not is_retida else "NÃO INFORMADO",
-                        'latitude': request.data.get('latitude'),
-                        'longitude': request.data.get('longitude'),
+                        'latitude': lat,
+                        'longitude': lng,
                         'observacao': observacao_app if is_retida else request.data.get('observacao', ''),
                         'data_baixa': data_final_baixa
                     }
                 )
+                
+                # Se foi UPDATE (motorista refez a baixa), restaura o backup original 
+                # para não perder a foto verdadeiramente original 
+                if not created and backup_original_existente and config_backup.armazenar_foto_backup:
+                    baixa.comprovante_original_url = backup_original_existente
+                    baixa.save(update_fields=['comprovante_original_url'])
+
 
                 nf.status = 'BAIXADA' if baixa.tipo == 'ENTREGA' else 'OCORRENCIA'
                 nf.save()
                 
                 # --- DISPARO DA TASK CORRETA (O CÉREBRO) ---
-                if ocorrencia.codigo_tms in ['1', '01', '2', '02']:
-                    # Ocorrências 1/01 e 2/02: Vai para o fluxo do Agente IA (YOLO) primeiro
+                from configuracao.utils import get_config
+                config = get_config()
+                
+                if tipo_operacao == 'COLETA':
+                    from manifesto.tasks import enviar_coleta_esl_task
+                    if config.enviar_tms:
+                        enviar_coleta_esl_task.delay(baixa.id)
+                    msg_log = "Coleta agendada para TMS (Picks Endpoint)." if config.enviar_tms else "Coleta salva (TMS desligado)."
+                elif ocorrencia.codigo_tms in config.get_codigos_yolo_list():
+                    # Ocorrências configuráveis: Vai para o fluxo do Agente IA (YOLO) primeiro
                     from AgenteIa.tasks import task_processar_canhoto_ia
                     task_processar_canhoto_ia.delay(baixa.id)
                     msg_log = "Enviada para processamento no Agente IA (YOLO) (Task Ativa)."
                 else:
-                    # Demais ocorrências: Fluxo normal e direto para o TMS
-                    if nf.chave_acesso:
-                        # Se for NF-e normal, usa o endpoint de chaves
-                        enviar_baixa_esl_task.delay(baixa.id) # Descomentar para enviar NFE ao TMS
-                        msg_log = "NF-e agendada para TMS."
+                    # Demais ocorrências: Fluxo direto para o TMS (se ativo)
+                    if config.enviar_tms:
+                        if nf.chave_acesso:
+                            enviar_baixa_esl_task.delay(baixa.id)
+                            msg_log = "NF-e agendada para TMS."
+                        else:
+                            enviar_baixa_minuta_task.delay(baixa.id)
+                            msg_log = "Minuta agendada para TMS."
                     else:
-                        # Se for Minuta (sem chave), usa o endpoint de fretes (v1/freights)
-                        enviar_baixa_minuta_task.delay(baixa.id) # Descomentar para enviar Minuta ao TMS
-                        msg_log = "Minuta agendada para TMS."
+                        msg_log = "Baixa salva localmente (TMS desligado nas configurações)."
                 
                 print(f"BAIXA REGISTRADA: {msg_log} (Retida: {is_retida})")
 
@@ -142,7 +213,9 @@ class RegistrarBaixaView(APIView):
                 msg_exc += f" no manifesto {numero_mft}"
             return Response({'erro': msg_exc + "."}, status=404)
         except Exception as e:
-            print(f"ERRO NA BAIXA: {str(e)}") 
+            import traceback
+            print(f"ERRO NA BAIXA: {str(e)}")
+            traceback.print_exc()
             return Response({'erro': str(e)}, status=400)
 
 

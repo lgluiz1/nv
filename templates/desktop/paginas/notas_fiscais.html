@@ -72,6 +72,8 @@
                         <th>NF-e / Chave</th>
                         <th>Manifesto / Motorista</th>
                         <th>Status Atual</th>
+                        <th>Canhoto</th>
+                        <th>Leitura</th>
                         <th>Integração TMS</th>
                         <th class="text-center">Ações</th>
                     </tr>
@@ -81,8 +83,14 @@
                     {% with ultima_baixa=nota.ultima_baixa %}
                     <tr>
                         <td>
-                            <span class="fw-bold text-primary">{{ nota.numero_nota }}</span>
-                            <br><small class="text-muted" style="font-size: 0.7rem;">{{ nota.chave_acesso|truncatechars:20 }}</small>
+                            <span class="fw-bold text-primary">
+                                {% if nota.tipo_operacao == 'COLETA' %}
+                                    <i class="bi bi-box-seam me-1"></i>{{ nota.numero_coleta|default:nota.numero_nota }}
+                                {% else %}
+                                    {{ nota.numero_nota }}
+                                {% endif %}
+                            </span>
+                            <br><small class="text-muted" style="font-size: 0.7rem;">{{ nota.chave_acesso|default:nota.tipo_operacao|truncatechars:20 }}</small>
                         </td>
                         <td>
                             <span class="small fw-bold">#{{ nota.manifesto.numero_manifesto }}</span>
@@ -90,11 +98,37 @@
                         </td>
                         <td>
                             {% if nota.status == 'BAIXADA' %}
-                                <span class="badge bg-success">Entregue</span>
+                                {% if nota.tipo_operacao == 'COLETA' %}
+                                    <span class="badge bg-success">Coletado</span>
+                                {% else %}
+                                    <span class="badge bg-success">Entregue</span>
+                                {% endif %}
                             {% elif nota.status == 'OCORRENCIA' %}
                                 <span class="badge bg-danger">{{ ultima_baixa.ocorrencia.descricao|default:"Ocorrência" }}</span>
                             {% else %}
                                 <span class="badge bg-warning text-dark">Pendente</span>
+                            {% endif %}
+                        </td>
+                        <td class="small">
+                            {% if nota.status != 'PENDENTE' %}
+                                {% if ultima_baixa.ia_yolo_status %}
+                                    <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>OK</span>
+                                {% else %}
+                                    <span class="text-danger"><i class="bi bi-x-circle-fill me-1"></i>Falhou</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="small">
+                            {% if nota.status != 'PENDENTE' %}
+                                {% if ultima_baixa.ia_ocr_status %}
+                                    <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>OK</span>
+                                {% else %}
+                                    <span class="text-danger"><i class="bi bi-x-circle-fill me-1"></i>Ruim</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">-</span>
                             {% endif %}
                         </td>
                         <td>

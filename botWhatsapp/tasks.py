@@ -4,11 +4,10 @@ import json
 
 @shared_task(bind=True, max_retries=3)
 def buscar_nfe_tms_task(self, numero_nfe):
-    template_id = 9873
-    empresa = "quickdelivery"
-    token = "zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
+    from configuracao.utils import get_config
+    config = get_config()
 
-    url = f"https://{empresa}.eslcloud.com.br/api/analytics/reports/{template_id}/data"
+    url = f"https://{config.dominio_esl}/api/analytics/reports/{config.report_busca_nfe}/data"
 
     payload = {
         "search": {
@@ -23,7 +22,7 @@ def buscar_nfe_tms_task(self, numero_nfe):
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}"
+        "Authorization": f"Bearer {config.token_analytics}"
     }
 
     try:

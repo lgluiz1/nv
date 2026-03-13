@@ -58,14 +58,39 @@ def task_processar_canhoto_ia(baixa_id):
     temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp_ia')
     os.makedirs(temp_dir, exist_ok=True)
     
+    # Limpeza automática: Remove arquivos temporários com mais de 1 hora (proteção contra crash)
+    import time
+    agora = time.time()
+    for f in os.listdir(temp_dir):
+        caminho_f = os.path.join(temp_dir, f)
+        if os.path.isfile(caminho_f) and (agora - os.path.getmtime(caminho_f)) > 3600:
+            try:
+                os.remove(caminho_f)
+            except:
+                pass
+    
     # img_path será enviado pro run_ia.py
     img_path = os.path.join(temp_dir, f"temp_{baixa.id}.jpg")
     cv2.imwrite(img_path, img_original)
     
     # 5. Chama o script Python isolado que não sofre do bug de multiprocessing do Celery
+    from configuracao.utils import get_config
+    config = get_config()
+    
+    # Se YOLO estiver desligado, pula o processamento da IA e vai direto pro TMS
+    if not config.processar_yolo:
+        print(f"YOLO desligado nas configurações. Enviando foto original para TMS.")
+        baixa.ia_yolo_status = False
+        baixa.ia_ocr_status = False
+        baixa.save()
+        if os.path.exists(img_path):
+            os.remove(img_path)
+        return finalizar_fluxo_tms(baixa)
+    
     script_path = os.path.join(settings.BASE_DIR, 'AgenteIa', 'run_ia.py')
-    print(f"Iniciando YOLO Externo para Baixa {baixa.id}...")
-    run_result = subprocess.run(['python', script_path, img_path, watermark_text], capture_output=True, text=True)
+    skip_ocr = "skip_ocr" if not config.processar_ocr else ""
+    print(f"Iniciando YOLO Externo para Baixa {baixa.id}... (OCR: {'ON' if config.processar_ocr else 'OFF'})")
+    run_result = subprocess.run(['python', script_path, img_path, watermark_text, nfe_num, skip_ocr], capture_output=True, text=True)
     out = run_result.stdout.strip()
     err = run_result.stderr.strip()
     
@@ -85,10 +110,14 @@ def task_processar_canhoto_ia(baixa_id):
             
             if nova_url:
                 baixa.comprovante_foto_url = nova_url
-                baixa.save()
             
             found_canhoto = True
             os.remove(crop_path)
+            
+    # --- ATUALIZA STATUS DA IA NO BANCO ---
+    baixa.ia_yolo_status = "INFO:YOLO_SUCESSO" in out
+    baixa.ia_ocr_status = "INFO:OCR_SUCESSO" in out
+    baixa.save()
             
     # Limpa arquivo temporario
     if os.path.exists(img_path):
@@ -108,7 +137,7 @@ def task_processar_canhoto_ia(baixa_id):
 def upload_via_ftp_agente(imagem_bytes, nome_arquivo, caminho_destino):
     """Sua função de FTP adaptada para caminhos dinâmicos"""
     try:
-        ftp = FTP(settings.FTP_HOST)
+        ftp = FTP(settings.FTP_HOST, timeout=30)
         ftp.login(user=settings.FTP_USER, passwd=settings.FTP_PASS)
         
         # Tenta acessar o caminho completo da Interserver
@@ -128,12 +157,17 @@ def upload_via_ftp_agente(imagem_bytes, nome_arquivo, caminho_destino):
         return None
 
 def finalizar_fluxo_tms(baixa):
-    """Dispara a integração final com o delay necessário"""
-    if baixa.nota_fiscal.chave_acesso:
-        # Descomentar a linha abaixo quando for subir pro Git / Produção
-        #enviar_baixa_esl_task.apply_async(args=[baixa.id], countdown=2)
+    """Dispara a integração final com o delay necessário (controlado pela flag enviar_tms)"""
+    from configuracao.utils import get_config
+    config = get_config()
+    
+    if not config.enviar_tms:
+        print(f"TMS: Envio DESLIGADO nas configurações. Baixa {baixa.id} salva apenas localmente.")
+        return
+    
+    if baixa.nota_fiscal and baixa.nota_fiscal.chave_acesso:
+        enviar_baixa_esl_task.apply_async(args=[baixa.id], countdown=2)
         print(f"TMS: Fluxo de baixa de NF-e {baixa.nota_fiscal.chave_acesso} despachado.")
-    else:
-        # Descomentar a linha abaixo quando for subir pro Git / Produção
-        #enviar_baixa_minuta_task.apply_async(args=[baixa.id], countdown=2)
+    elif baixa.nota_fiscal:
+        enviar_baixa_minuta_task.apply_async(args=[baixa.id], countdown=2)
         print(f"TMS: Fluxo de baixa de Minuta {baixa.nota_fiscal.numero_nota} despachado.")

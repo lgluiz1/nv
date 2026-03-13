@@ -303,16 +303,30 @@ def detalhes_nota_fiscal_view(request, nota_id):
     # 1. Busca a nota de referência para descobrir a chave de acesso
     nota_clicada = get_object_or_404(NotaFiscal, id=nota_id)
     
-    # 2. Busca TODAS as ocorrências dessa mesma nota no sistema todo pela chave
+    # 2. Define o filtro para buscar o histórico de forma inteligente
+    if nota_clicada.chave_acesso:
+        # Se tem chave, busca por ela (Padrão para NF-e)
+        filtros_historico = Q(chave_acesso=nota_clicada.chave_acesso)
+    elif nota_clicada.tipo_operacao == 'COLETA':
+        # Para coletas sem chave, busca por numero_coleta ou ID do TMS
+        filtros_historico = Q(tipo_operacao='COLETA') & (
+            Q(numero_coleta=nota_clicada.numero_coleta) | 
+            Q(freight_id_tms=nota_clicada.freight_id_tms)
+        )
+    else:
+        # Para minutas/outros sem chave, busca pelo número da nota
+        filtros_historico = Q(numero_nota=nota_clicada.numero_nota) & Q(chave_acesso__isnull=True)
+
+    # 3. Busca TODAS as ocorrências dessa nota conforme os filtros definidos
     historico_completo = NotaFiscal.objects.filter(
-        chave_acesso=nota_clicada.chave_acesso
+        filtros_historico
     ).select_related(
         'manifesto', 
         'manifesto__motorista'
     ).prefetch_related(
-        'baixa_info',           # Traz as informações de baixa/entrega
-        'baixa_info__ocorrencia' # Traz a descrição da ocorrência
-    ).order_by('-manifesto__data_criacao') # Da mais recente para a mais antiga
+        'baixa_info',           
+        'baixa_info__ocorrencia' 
+    ).order_by('-manifesto__data_criacao')
 
     context = {
         'nota_principal': nota_clicada,

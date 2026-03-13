@@ -23,6 +23,8 @@ class ListarNotasManifestoView(APIView):
                 'status': nf.status,
                 # AQUI ESTÁ A CHAVE: Passando o tipo para o JS validar
                 'tipo_operacao': nf.tipo_operacao,
+                'id_tms': nf.freight_id_tms,
+                'numero_coleta': nf.numero_coleta,
                 'ja_baixada': baixa is not None, 
                 'dados_baixa': {
                     'tipo': baixa.tipo,

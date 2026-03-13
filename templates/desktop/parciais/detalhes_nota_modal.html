@@ -76,12 +76,43 @@
                         <div class="col-md-5 text-center">
                             <label class="text-muted small fw-bold d-block mb-2 text-uppercase" style="font-size: 0.65rem;">Comprovante / Canhoto</label>
                             {% if baixa.comprovante_foto_url %}
-                                <a href="{{ baixa.comprovante_foto_url }}" target="_blank" class="d-inline-block position-relative">
-                                    <img src="{{ baixa.comprovante_foto_url }}" class="img-fluid rounded shadow-sm border" style="max-height: 160px; object-fit: contain;">
-                                    <span class="position-absolute bottom-0 end-0 bg-dark bg-opacity-75 text-white p-1 rounded-start small">
-                                        <i class="bi bi-fullscreen"></i>
-                                    </span>
-                                </a>
+                                <div class="mb-2">
+                                    <a href="{{ baixa.comprovante_foto_url }}" target="_blank" class="d-inline-block position-relative">
+                                        <img src="{{ baixa.comprovante_foto_url }}" class="img-fluid rounded shadow-sm border" style="max-height: 160px; object-fit: contain;">
+                                        <span class="position-absolute bottom-0 end-0 bg-dark bg-opacity-75 text-white p-1 rounded-start small" title="Foto Processada">
+                                            <i class="bi bi-cpu"></i>
+                                        </span>
+                                    </a>
+                                </div>
+                                <div class="d-flex justify-content-center gap-2 mb-2">
+                                    {% if baixa.ia_yolo_status %}
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle small">
+                                            <i class="bi bi-check-circle me-1"></i>IA: Canhoto OK
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle small">
+                                            <i class="bi bi-x-circle me-1"></i>IA: Canhoto Falhou
+                                        </span>
+                                    {% endif %}
+
+                                    {% if baixa.ia_ocr_status %}
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle small">
+                                            <i class="bi bi-eye me-1"></i>IA: Leitura OK
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle small">
+                                            <i class="bi bi-eye-slash me-1"></i>IA: Leitura Falhou
+                                        </span>
+                                    {% endif %}
+                                </div>
+                                {% if baixa.comprovante_original_url and baixa.comprovante_original_url != baixa.comprovante_foto_url %}
+                                    <div class="mt-2">
+                                        <label class="text-muted" style="font-size: 0.6rem; display: block;">FOTO ORIGINAL (BACKUP)</label>
+                                        <a href="{{ baixa.comprovante_original_url }}" target="_blank" class="d-inline-block opacity-75">
+                                            <img src="{{ baixa.comprovante_original_url }}" class="img-fluid rounded border" style="max-height: 80px; filter: grayscale(50%);">
+                                        </a>
+                                    </div>
+                                {% endif %}
                             {% else %}
                                 <div class="py-4 px-3 bg-white border border-dashed rounded text-muted">
                                     <i class="bi bi-camera-off d-block fs-3 mb-2 opacity-50"></i>

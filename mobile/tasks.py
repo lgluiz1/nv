@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 @shared_task
 def buscar_manifestos_tms():
     from datetime import date
-    template_id = 2972
-    empresa = "quickdelivery"
-    URL = f"https://{empresa}.eslcloud.com.br/api/analytics/reports/{template_id}/data"
+    from configuracao.utils import get_config
+    config = get_config()
+    URL = f"https://{config.dominio_esl}/api/analytics/reports/{config.report_validacao}/data"
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": "Bearer zyUq31Mq6gMcYGzV4zL7HTsdnS7pULjaQoxGbkPZ1cLDoxT3d-Xukw"
+        "Authorization": f"Bearer {config.token_analytics}"
     }
 
     hoje = date.today().strftime("%Y-%m-%d")

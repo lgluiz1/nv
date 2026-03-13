@@ -277,6 +277,7 @@ class BaixaNF(models.Model):
     
     comprovante_foto = models.ImageField(upload_to='comprovantes/', null=True, blank=True)
     comprovante_foto_url = models.CharField(max_length=500, null=True, blank=True)
+    comprovante_original_url = models.CharField(max_length=500, null=True, blank=True)
     
     # Vincula o código de ocorrência do TMS (o que o motorista escolheu no app)
     ocorrencia = models.ForeignKey(Ocorrencia, on_delete=models.SET_NULL, null=True, blank=True)
@@ -292,6 +293,17 @@ class BaixaNF(models.Model):
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     integrado_tms = models.BooleanField(default=False, null=True, blank=True, verbose_name="Integrado ESL")
     payload_enviado = models.JSONField(null=True, blank=True, verbose_name="JSON enviado para ESL")
+    
+    # Campo de Status da IA
+    ia_yolo_status = models.BooleanField(default=False, verbose_name="YOLO: Canhoto Detectado")
+    ia_ocr_status = models.BooleanField(default=False, verbose_name="OCR: Leitura Realizada")
+
+    def save(self, *args, **kwargs):
+        # Se temos uma URL de foto mas o backup original está vazio, 
+        # significa que é o registro inicial. Salvamos o backup.
+        if self.comprovante_foto_url and not self.comprovante_original_url:
+            self.comprovante_original_url = self.comprovante_foto_url
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Baixa de {self.nota_fiscal.numero_nota} ({self.tipo})"
