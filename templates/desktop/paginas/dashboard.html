@@ -205,7 +205,32 @@ function iniciarTimer() {
     }, 1000);
 }
 
-document.addEventListener('DOMContentLoaded', iniciarTimer);
+document.addEventListener('DOMContentLoaded', () => {
+    iniciarTimer();
+
+    // ✅ NOVO: Popup de Aviso de Desenvolvimento (apenas uma vez por sessão)
+    if (!sessionStorage.getItem('aviso_desenvolvimento_exibido')) {
+        Swal.fire({
+            title: 'Plataforma em Desenvolvimento 🚀',
+            html: `
+                <div class="text-start">
+                    <p>Seja bem-vindo! Gostaríamos de informar que o <b>Quick Delivery</b> está em fase de desenvolvimento ativo.</p>
+                    <ul>
+                        <li>Melhorias de performance são aplicadas constantemente.</li>
+                        <li>Novas funcionalidades e modificações podem ocorrer diariamente.</li>
+                        <li>Isso se aplica tanto ao <b>Painel Operacional</b> quanto ao <b>App do Motorista</b>.</li>
+                    </ul>
+                    <p class="mb-0">Agradecemos sua paciência e colaboração!</p>
+                </div>
+            `,
+            icon: 'info',
+            confirmButtonText: 'Entendido',
+            confirmButtonColor: '#0d6efd',
+            allowOutsideClick: false
+        });
+        sessionStorage.setItem('aviso_desenvolvimento_exibido', 'true');
+    }
+});
 
 /* ======================
    GRÁFICO ENTREGAS

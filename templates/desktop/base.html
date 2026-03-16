@@ -145,7 +145,7 @@
     </div>
 
     <div class="nav flex-column mb-3 border-top border-secondary pt-2">
-        <a href="#" class="nav-link">
+        <a href="{% url 'operacional:configuracao_sistema' %}" class="nav-link {% if '/configuracao/' in request.path %}active-menu{% endif %}">
             <i class="bi bi-gear"></i>
             <span class="menu-text">Configurações</span>
         </a>

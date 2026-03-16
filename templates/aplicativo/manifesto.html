@@ -1233,7 +1233,7 @@
 
         if ('serviceWorker' in navigator) {
             // 1. Registra o SW
-            navigator.serviceWorker.register('/serviceworker.js').then(reg => {
+            navigator.serviceWorker.register('/serviceworker.js', { scope: '/app/' }).then(reg => {
 
                 // 2. Monitora se o SW atualizou e assumiu o controle
                 navigator.serviceWorker.addEventListener('controllerchange', () => {

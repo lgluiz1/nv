@@ -53,91 +53,110 @@ const TEMA_OPERACAO = {
 // =====================================================
 // SINCRONIZAÇÃO AUTOMÁTICA (VIGIA)
 // =====================================================
+let _sincronizando = false;
 async function sincronizarBaixasPendentes() {
-    const db = await abrirDB();
-    const transaction = db.transaction('baixas_pendentes', 'readonly');
-    const store = transaction.objectStore('baixas_pendentes');
-    
-    const pendentes = await new Promise(res => {
-        const req = store.getAll();
-        req.onsuccess = () => res(req.result);
-    });
+    // Guard de concorrência: evita múltiplas chamadas simultâneas
+    if (_sincronizando) return;
+    _sincronizando = true;
 
-    if (pendentes.length === 0) {
-        atualizarIconeNuvem(); // Garante que fica verde se estiver vazio
-        return;
-    }
+    try {
+        const db = await abrirDB();
+        const transaction = db.transaction('baixas_pendentes', 'readonly');
+        const store = transaction.objectStore('baixas_pendentes');
+        
+        // Usa cursor em vez de getAll() para não carregar todos os blobs na RAM de uma vez
+        const chaves = await new Promise(res => {
+            const keys = [];
+            const req = store.openKeyCursor();
+            req.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor) {
+                    keys.push(cursor.key);
+                    cursor.continue();
+                } else {
+                    res(keys);
+                }
+            };
+            req.onerror = () => res([]);
+        });
 
-    console.log(`🔄 Tentando sincronizar ${pendentes.length} notas...`);
-
-    for (const item of pendentes) {
-        const formData = new FormData();
-        
-        // Reconstrói exatamente o que o Django espera
-        for (const key in item.campos) {
-            // Se o valor for null ou undefined, enviamos "0.00" para evitar o erro 400 de decimal
-            let valor = item.campos[key];
-            if ((key === 'latitude' || key === 'longitude') && (valor === null || valor === undefined)) {
-                valor = "0.000000";
-            }
-            formData.append(key, valor || '');
-        }
-        
-        formData.append('chave_acesso', item.chaveNF || '');
-        formData.append('numero_nota', item.numeroNF || '');
-        formData.append('manifesto_id', item.mID || '');
-        
-        // Se for uma coleta, garante que o tipo_operacao e nota_id_tms sejam enviados
-        if (item.campos && item.campos.tipo_operacao === 'COLETA') {
-            formData.append('tipo_operacao', 'COLETA');
-            formData.append('nota_id_tms', item.campos.nota_id_tms || item.chaveNF);
+        if (chaves.length === 0) {
+            atualizarIconeNuvem();
+            return;
         }
 
-        if (item.foto) {
-            formData.append('foto', item.foto, `mft_${item.mID}_${item.chaveNF}.jpg`);
-        }
+        console.log(`🔄 Tentando sincronizar ${chaves.length} notas...`);
 
-        try {
-            const response = await authFetch(`${API_BASE}manifesto/registrar-baixa/`, {
-                method: 'POST',
-                body: formData 
+        // Processa UM registro por vez via get(key) para economia de memória
+        for (const key of chaves) {
+            const item = await new Promise(res => {
+                const tx = db.transaction('baixas_pendentes', 'readonly');
+                const req = tx.objectStore('baixas_pendentes').get(key);
+                req.onsuccess = () => res(req.result);
+                req.onerror = () => res(null);
             });
 
-            if (response.ok) {
-                // SUCESSO: Remove do IndexedDB
-                const delTrans = db.transaction('baixas_pendentes', 'readwrite');
-                await delTrans.objectStore('baixas_pendentes').delete(item.id);
-                console.log(`✅ Nota ${item.numeroNF} sincronizada!`);
-                await atualizarIconeNuvem();
-            } 
-            else if (response.status === 400) {
-                // ERRO DE DADOS (Bad Request): 
-                // Provavelmente o erro de "null" ou campos faltando. 
-                // Removemos para não travar o loop, pois o servidor nunca aceitará esse dado como está.
-                console.error(`❌ Erro 400 na nota ${item.numeroNF}: Dados rejeitados pelo servidor.`);
-                const delTrans = db.transaction('baixas_pendentes', 'readwrite');
-                await delTrans.objectStore('baixas_pendentes').delete(item.id);
-            } 
-            else {
-                // ERRO 500 ou outros: Servidor caiu ou banco fora. 
-                // Mantemos no DB para tentar na próxima sincronização.
-                console.warn(`⚠️ Servidor respondeu ${response.status} para nota ${item.numeroNF}. Mantendo na fila.`);
+            if (!item) continue;
+
+            const formData = new FormData();
+            
+            for (const k in item.campos) {
+                let valor = item.campos[k];
+                if ((k === 'latitude' || k === 'longitude') && (valor === null || valor === undefined)) {
+                    valor = "0.000000";
+                }
+                formData.append(k, valor || '');
             }
-        } catch (err) {
-            // FALHA DE CONEXÃO: Internet caiu no meio do processo.
-            console.warn("📡 Falha de rede durante a sincronização. Parando ciclo.");
-            break; // Sai do loop para economizar processamento, tenta quando a rede estabilizar
+            
+            formData.append('chave_acesso', item.chaveNF || '');
+            formData.append('numero_nota', item.numeroNF || '');
+            formData.append('manifesto_id', item.mID || '');
+            
+            if (item.campos && item.campos.tipo_operacao === 'COLETA') {
+                formData.append('tipo_operacao', 'COLETA');
+                formData.append('nota_id_tms', item.campos.nota_id_tms || item.chaveNF);
+            }
+
+            if (item.foto) {
+                formData.append('foto', item.foto, `mft_${item.mID}_${item.chaveNF}.jpg`);
+            }
+
+            try {
+                const response = await authFetch(`${API_BASE}manifesto/registrar-baixa/`, {
+                    method: 'POST',
+                    body: formData 
+                });
+
+                if (response.ok) {
+                    const delTrans = db.transaction('baixas_pendentes', 'readwrite');
+                    await delTrans.objectStore('baixas_pendentes').delete(item.id);
+                    console.log(`✅ Nota ${item.numeroNF} sincronizada!`);
+                    await atualizarIconeNuvem();
+                } 
+                else if (response.status === 400) {
+                    console.error(`❌ Erro 400 na nota ${item.numeroNF}: Dados rejeitados pelo servidor.`);
+                    const delTrans = db.transaction('baixas_pendentes', 'readwrite');
+                    await delTrans.objectStore('baixas_pendentes').delete(item.id);
+                } 
+                else {
+                    console.warn(`⚠️ Servidor respondeu ${response.status} para nota ${item.numeroNF}. Mantendo na fila.`);
+                }
+            } catch (err) {
+                console.warn("📡 Falha de rede durante a sincronização. Parando ciclo.");
+                break;
+            }
         }
+        
+        await atualizarIconeNuvem();
+    } finally {
+        _sincronizando = false;
     }
-    
-    // Atualiza a nuvem no final do processo
-    await atualizarIconeNuvem();
 }
 
 // Chame a atualização da nuvem assim que salvar no catch do salvarRegistro
 // catch (err) { ... store.add(objOffline); atualizarIconeNuvem(); ... }
 
-window.addEventListener('online', sincronizarBaixasPendentes);
+// (Listener 'online' unificado no final do arquivo)
 // =====================================================
 // INICIALIZAÇÃO (INIT)
 // =====================================================
@@ -225,7 +244,7 @@ async function handleManifestoSearch(event) {
 
 
 // Tenta sincronizar toda vez que o app detecta que a internet voltou
-window.addEventListener('online', sincronizarBaixasPendentes);
+// (Listener 'online' unificado no final do arquivo)
 
 //
 function startPolling() {
@@ -455,10 +474,7 @@ async function atualizarListaViva(numeroManifesto) {
             atualizarVisualContadores(contador, notas, totalFinalizadas);
             filtrarNotasOffline();
 
-            localStorage.setItem(`cache_notas_${numeroManifesto}`, JSON.stringify({
-                html: areaDinamica.innerHTML,
-                timestamp: new Date().getTime()
-            }));
+            // Cache de dados puros (leve) — o cache de HTML foi removido para economizar memória
             localStorage.setItem(`cache_dados_puros_${numeroManifesto}`, novosDadosJSON);
         }
     } catch (err) { console.error("Erro na atualização viva:", err); }
@@ -844,6 +860,10 @@ async function salvarRegistro() {
     if (!isRetida && temFoto) {
         fotoBlob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.70));
         formData.append('foto', fotoBlob, `mft_${mID}_${chaveNF}.jpg`);
+        // Libera memória do canvas imediatamente após extrair o blob
+        canvas.width = 1;
+        canvas.height = 1;
+        canvas.getContext('2d').clearRect(0, 0, 1, 1);
     }
 
     // 7. Envio para o Backend com CONTINGÊNCIA OFFLINE
@@ -973,42 +993,34 @@ function configurarBotaoWhats(erroMsg, chave) {
 
 //// FUNÇÕES AUXILIARES DE CÂMERA NATIVA E MODAIS ////
 
-function handleCameraNativa(event) {
+async function handleCameraNativa(event) {
     const file = event.target.files[0];
     if (!file) return;
 
     const canvas = document.getElementById('canvas-preview');
     const ctx = canvas.getContext('2d');
-    
-    // Uso eficiente de memória para dispositivos móveis
-    const imgUrl = URL.createObjectURL(file);
-    const img = new Image();
 
-    img.onload = function () {
-        // Reduzido de 1600px para 1200px para economizar RAM em celulares antigos
-        const larguraDesejada = 1200;
-        
-        let escala = 1;
-        if (img.width > larguraDesejada) {
-            escala = larguraDesejada / img.width;
-        }
+    try {
+        // createImageBitmap redimensiona NATIVAMENTE pelo browser
+        // sem carregar a foto inteira (12MP ~48MB) na RAM do JavaScript.
+        // Resultado: ~90% menos consumo de memória vs new Image()
+        const larguraDesejada = 800;
+        const bitmap = await createImageBitmap(file, {
+            resizeWidth: larguraDesejada,
+            resizeQuality: 'medium'
+        });
 
-        canvas.width = img.width * escala;
-        canvas.height = img.height * escala;
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        ctx.drawImage(bitmap, 0, 0);
 
-        // Desenha no canvas (isso acontece na memória "interna")
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        
-        // Libera a memória brutalmente logo após o desenho
-        URL.revokeObjectURL(imgUrl);
+        // Libera o bitmap da memória imediatamente
+        bitmap.close();
 
-        // --- MUDANÇA AQUI: NÃO MOSTRAMOS O CANVAS ---
-        canvas.style.display = 'none'; 
-        // Criamos uma marcação interna para o salvarRegistro saber que tem foto
-        canvas.dataset.temFoto = "true"; 
+        canvas.style.display = 'none';
+        canvas.dataset.temFoto = "true";
 
         // Atualiza a interface de forma LEVE (apenas ícone e texto)
-        const placeholder = document.getElementById('placeholder-camera');
         const icone = document.getElementById('icone-camera');
         const texto = document.getElementById('texto-status-foto');
 
@@ -1021,12 +1033,30 @@ function handleCameraNativa(event) {
             texto.className = "text-success fw-bold mt-2";
         }
 
-        // Troca os botões
         document.getElementById('label-camera').style.display = 'none';
         document.getElementById('btn-nova-foto').style.display = 'block';
-    };
-    
-    img.src = imgUrl;
+    } catch (err) {
+        console.error('Erro ao processar foto:', err);
+        // Fallback para navegadores muito antigos sem createImageBitmap
+        const imgUrl = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = function() {
+            const escala = Math.min(1, 800 / img.width);
+            canvas.width = img.width * escala;
+            canvas.height = img.height * escala;
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            URL.revokeObjectURL(imgUrl);
+            canvas.style.display = 'none';
+            canvas.dataset.temFoto = "true";
+            const icone = document.getElementById('icone-camera');
+            const texto = document.getElementById('texto-status-foto');
+            if (icone) { icone.className = "bi bi-check-circle-fill text-success"; icone.style.fontSize = "3rem"; }
+            if (texto) { texto.innerText = "Foto capturada com sucesso!"; texto.className = "text-success fw-bold mt-2"; }
+            document.getElementById('label-camera').style.display = 'none';
+            document.getElementById('btn-nova-foto').style.display = 'block';
+        };
+        img.src = imgUrl;
+    }
 }
 // =========================================================================
 // Abre o modal de baixa com os dados da nota e configurações específicas
@@ -1052,10 +1082,11 @@ function abrirModalBaixa(numeroNota, chaveAcesso, tipo) {
     if (inputObs) inputObs.value = '';
     document.getElementById('input-recebedor').value = '';
     
-    // Reset da Câmera e Canvas
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height); // Limpa o desenho anterior
-    canvas.dataset.temFoto = "false"; // Reseta validador
+    // Reset da Câmera e Canvas — libera memória GPU reduzindo para 1x1
+    canvas.width = 1;
+    canvas.height = 1;
+    canvas.getContext('2d').clearRect(0, 0, 1, 1);
+    canvas.dataset.temFoto = "false";
     canvas.style.display = 'none';
 
     // Reset Visual do Placeholder (Volta a ser cinza e sem check)

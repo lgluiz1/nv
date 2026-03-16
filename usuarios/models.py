@@ -38,6 +38,19 @@ class Motorista(models.Model):
         default='MOTORISTA',
         verbose_name="Tipo de Usuário"
     )
+
+    # Cargo define o nível de permissão DENTRO do sistema (separado de tipo_usuario)
+    CARGO_CHOICES = [
+        ('MEMBRO', 'Membro'),
+        ('GERENTE', 'Gerente'),
+        ('GESTOR', 'Gestor'),
+    ]
+    cargo = models.CharField(
+        max_length=10,
+        choices=CARGO_CHOICES,
+        default='MEMBRO',
+        verbose_name="Cargo"
+    )
     
     # Campo para armazenar foto de perfil, se necessário
     foto_perfil = models.ImageField(

@@ -32,4 +32,8 @@ urlpatterns = [
     path('suporte/', views.SuporteView.as_view(), name='suporte'),
     path('treinamentos/', views.TreinamentosView.as_view(), name='treinamentos'),
     path('central-ajuda/', views.CentralAjudaView.as_view(), name='central_ajuda'),
+
+    # Configurações do Sistema
+    path('configuracao/', views.ConfiguracaoSistemaView.as_view(), name='configuracao_sistema'),
+    path('api/configuracao/salvar/', views.salvar_configuracao_view, name='salvar_configuracao'),
 ]

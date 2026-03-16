@@ -7,12 +7,13 @@ from usuarios.models import Motorista , Filial
 from manifesto.models import Manifesto, Ocorrencia , NotaFiscal , BaixaNF , ManifestoBuscaLog, HistoricoOcorrencia
 import json
 from django.views.generic import TemplateView, ListView
-from django.utils.decorators import method_decorator
-from django.contrib.auth.decorators import login_required
-from django.db.models.functions import ExtractHour
 from usuarios.decorators import apenas_operacional
 from django.utils import timezone
 from datetime import timedelta
+from configuracao.models import ConfiguracaoSistema
+from django.contrib.auth.decorators import login_required
+from django.utils.decorators import method_decorator
+from django.views.decorators.http import require_POST
 from django.db.models import Count, Q, Sum, Avg, ExpressionWrapper, FloatField, Prefetch
 from collections import defaultdict
 
@@ -807,3 +808,74 @@ class CentralAjudaView(TemplateView):
         context['titulo'] = "Central de Ajuda"
         context['usuario_nome'] = self.request.user.get_full_name() or self.request.user.username
         return context
+
+# --- CONFIGURAÇÃO DO SISTEMA ---
+@method_decorator(login_required(login_url='/login/'), name='dispatch')
+@method_decorator(apenas_operacional, name='dispatch')
+class ConfiguracaoSistemaView(TemplateView):
+    template_name = 'desktop/paginas/configuracao.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        config = ConfiguracaoSistema.load()
+        perfil = self.request.user.motorista_perfil
+        
+        # Mascarar tokens se não for gestor
+        token_analytics = config.token_analytics
+        token_invoices = config.token_invoices
+        
+        if perfil.cargo != 'GESTOR':
+            if token_analytics:
+                token_analytics = token_analytics[:5] + "*" * 10 + token_analytics[-5:]
+            if token_invoices:
+                token_invoices = token_invoices[:5] + "*" * 10 + token_invoices[-5:]
+
+        context.update({
+            'config': config,
+            'cargo': perfil.cargo,
+            'token_analytics_masked': token_analytics,
+            'token_invoices_masked': token_invoices,
+            'titulo': "Configuração do Sistema",
+            'usuario_nome': self.request.user.get_full_name() or self.request.user.username,
+        })
+        return context
+
+@login_required(login_url='/login/')
+@apenas_operacional
+@require_POST
+def salvar_configuracao_view(request):
+    perfil = request.user.motorista_perfil
+    if perfil.cargo != 'GESTOR':
+        return JsonResponse({'status': 'erro', 'message': 'Acesso negado. Apenas Gestores podem alterar as configurações.'}, status=403)
+    
+    config = ConfiguracaoSistema.load()
+    
+    try:
+        data = json.loads(request.body)
+        
+        # Tokens (só atualiza se não vier com asteriscos/mascara do frontend)
+        # Na verdade no frontend gestores verão o original, membros verão masked disabled.
+        # Mas por segurança, validamos se o campo foi enviado.
+        if 'token_analytics' in data: config.token_analytics = data['token_analytics']
+        if 'token_invoices' in data: config.token_invoices = data['token_invoices']
+        
+        config.dominio_esl = data.get('dominio_esl', config.dominio_esl)
+        config.report_validacao = data.get('report_validacao', config.report_validacao)
+        config.report_busca_nfe = data.get('report_busca_nfe', config.report_busca_nfe)
+        
+        # Feature Flags
+        config.processar_yolo = data.get('processar_yolo', config.processar_yolo)
+        config.processar_ocr = data.get('processar_ocr', config.processar_ocr)
+        config.enviar_tms = data.get('enviar_tms', config.enviar_tms)
+        config.enviar_email_falhas = data.get('enviar_email_falhas', config.enviar_email_falhas)
+        config.emails_notificacao = data.get('emails_notificacao', config.emails_notificacao)
+        config.armazenar_foto_backup = data.get('armazenar_foto_backup', config.armazenar_foto_backup)
+        
+        # IA
+        config.codigos_ocorrencia_yolo = data.get('codigos_ocorrencia_yolo', config.codigos_ocorrencia_yolo)
+        
+        config.save()
+        return JsonResponse({'status': 'sucesso', 'message': 'Configurações salvas com sucesso!'})
+        
+    except Exception as e:
+        return JsonResponse({'status': 'erro', 'message': str(e)}, status=400)

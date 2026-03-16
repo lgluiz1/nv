@@ -88,5 +88,6 @@ class MeView(APIView):
             "id": motorista.id,
             "nome": motorista.nome_completo,
             "cpf": motorista.cpf,
-            "tipo": motorista.tipo_usuario
+            "tipo": motorista.tipo_usuario,
+            "cargo": motorista.cargo
         })

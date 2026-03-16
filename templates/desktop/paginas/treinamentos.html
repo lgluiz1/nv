@@ -109,3 +109,17 @@
     }
 </style>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+    window.addEventListener('load', () => {
+        Swal.fire({
+            title: 'Módulo de Treinamento',
+            text: 'Esta página está em fase de alimentação. Em breve teremos vídeos reais e tutoriais passo-a-passo atualizados.',
+            icon: 'info',
+            confirmButtonText: 'Entendido',
+            confirmButtonColor: '#0d6efd'
+        });
+    });
+</script>
+{% endblock %}

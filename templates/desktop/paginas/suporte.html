@@ -101,3 +101,17 @@
     </div>
 </div>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+    window.addEventListener('load', () => {
+        Swal.fire({
+            title: 'Suporte Online em Breve!',
+            text: 'Estamos finalizando as integrações do nosso chat inteligente para melhor atendê-lo. Por enquanto, os chamados são apenas demonstrativos.',
+            icon: 'info',
+            confirmButtonText: 'Entendido',
+            confirmButtonColor: '#0d6efd'
+        });
+    });
+</script>
+{% endblock %}
