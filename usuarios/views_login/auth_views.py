@@ -8,6 +8,10 @@ from rest_framework.permissions import IsAuthenticated
 
 from usuarios.models import Motorista
 
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+
+@method_decorator(csrf_exempt, name='dispatch')
 class VerificarCPFView(APIView):
     permission_classes = [AllowAny]
 
@@ -31,6 +35,7 @@ class VerificarCPFView(APIView):
         })
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class PrimeiroAcessoView(APIView):
     permission_classes = [AllowAny]
 

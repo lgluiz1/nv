@@ -16,7 +16,13 @@ load_dotenv(BASE_DIR / '.env')
 # Quick-start development settings - unsuitable for production
 SECRET_KEY = os.getenv('SECRET_KEY', 'default-safe-key-if-not-in-env')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,0.0.0.0,').split(',')
+ALLOWED_HOSTS = [
+    '127.0.0.1',
+    'localhost',
+    '0.0.0.0',
+    'entregas.luizgustavo.tech',
+    '*', # Permissivo para depuração, ajustar depois
+]
 
 CSRF_TRUSTED_ORIGINS = [
     'https://be81-191-241-65-196.ngrok-free.app',
@@ -96,6 +102,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
 # Configuração para servir arquivos de mídia (Fotos de comprovantes) em ambiente de desenvolvimento
