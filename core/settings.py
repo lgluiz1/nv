@@ -20,6 +20,7 @@ ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,0.0.0.0,').split
 
 CSRF_TRUSTED_ORIGINS = [
     'https://be81-191-241-65-196.ngrok-free.app',
+    'https://entregas.luizgustavo.tech',
 ]
 
 # Application definition
