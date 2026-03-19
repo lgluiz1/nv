@@ -786,7 +786,7 @@
             // Encontrar a versão do ServiceWorker listada no arquivo estaticamente
             // (Para PWA, como o cacheName está no sw.js, o mais performático é hardcodar a versão paralela aqui 
             // no HTML. Sempre recomendo alterar aqui com o SW)
-            const currentSwVersion = "1.29";
+            const currentSwVersion = "1.33";
             const btnDispSw = document.getElementById('disp-sw-versao');
             if (btnDispSw) btnDispSw.textContent = "v" + currentSwVersion;
         });
@@ -873,6 +873,33 @@
                     </div>
                     <p class="text-muted fw-bold mb-1" id="finalizar-message">Fechando manifesto automaticamente...</p>
                     <p class="small text-muted">Aguarde, por favor.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE FINALIZAÇÃO MANUAL -->
+    <div class="modal fade" id="modalFinalizacaoManual" tabindex="-1" aria-labelledby="modalFinalizacaoManualLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 20px;">
+                <div id="conteudo-modal-finalizacao">
+                    <div class="modal-header border-0 flex-column align-items-center pt-4">
+                        <div class="bg-primary bg-opacity-10 p-3 rounded-circle mb-3">
+                            <i class="bi bi-flag-fill text-primary fs-1"></i>
+                        </div>
+                        <h4 class="modal-title fw-bold text-dark">Entregas Concluídas</h4>
+                    </div>
+                    <div class="modal-body text-center px-4 pb-4">
+                        <p class="text-muted">Parabéns! Você concluiu todas as entregas deste manifesto. Deseja finalizar a rota agora?</p>
+                        <div class="d-grid gap-2 mt-4">
+                            <button type="button" class="btn btn-primary btn-lg rounded-pill fw-bold py-3 shadow-sm" onclick="executarFinalizacaoManual()">
+                                <i class="bi bi-check-circle-fill me-2"></i> FINALIZAR MANIFESTO
+                            </button>
+                            <button type="button" class="btn btn-link text-muted text-decoration-none fw-bold" data-bs-dismiss="modal">
+                                Voltar à Lista
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1486,9 +1513,9 @@
         }
 
     </script>
-    <script src="{% static 'js/serviceworker.js' %}?v=1.31"></script>
+    <script src="{% static 'js/serviceworker.js' %}?v=1.33"></script>
     <script src="/static/js/login_motorista/authFetch.js"></script>
-    <script src="{% static 'js/manifesto_v15.js' %}"></script>
+    <script src="{% static 'js/manifesto_v16.js' %}"></script>
     <script src="{% static 'js/pwa_tracking.js' %}"></script>
     <script src="{% static 'js/offiline.js' %}"></script>
     <script src="{% static 'js/historico_v1.js' %}"></script>

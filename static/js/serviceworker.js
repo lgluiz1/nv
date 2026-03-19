@@ -1,12 +1,12 @@
 // UNIFICADO: Versão v1.26 (Corrigida para evitar erro de Clone/POST)
-const CACHE_NAME = 'fluxo-logistica-v1.32';
+const CACHE_NAME = 'fluxo-logistica-v1.33';
 
 const filesToCache = [
     '/app/',
     '/app/login/',
     '/static/css/app_v2.css',
     '/static/css/login.css',
-    '/static/js/manifesto_v15.js',
+    '/static/js/manifesto_v16.js',
     '/static/js/pwa_tracking.js',
     '/static/css/bootstrap.min.css',
     '/static/css/bootstrap-icons.css',
