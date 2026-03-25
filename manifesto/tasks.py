@@ -576,8 +576,8 @@ def enviar_baixa_esl_task(self, baixa_id):
         return f"Baixa {baixa_id} não encontrada"
 
     except requests.exceptions.HTTPError as exc:
-        status = exc.response.status_code if exc.response else None
-        detalhe_erro = exc.response.text if exc.response else str(exc)
+        status = exc.response.status_code if hasattr(exc, 'response') and exc.response is not None else None
+        detalhe_erro = exc.response.text if hasattr(exc, 'response') and exc.response is not None else str(exc)
         msg_erro = f"Erro {status}: {detalhe_erro}"
 
         baixa.log_erro_tms = msg_erro[:500]
@@ -760,6 +760,8 @@ def enviar_baixa_minuta_task(self, baixa_id):
     except Exception as e:
         # Registra a falha no log da baixa para conferência na Torre de Controle
         msg_falha = f"Erro na integração da Minuta: {str(e)}"
+        if hasattr(e, 'response') and e.response is not None:
+            msg_falha = f"Erro na integração da Minuta ({e.response.status_code}): {e.response.text}"
         baixa.log_erro_tms = msg_falha[:500]
         baixa.integrado_tms = False
         baixa.save()
