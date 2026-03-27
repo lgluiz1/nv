@@ -357,6 +357,7 @@ async function atualizarListaViva(numeroManifesto) {
         if (!response || response.status !== 200) return;
 
         const notas = await response.json();
+        window.notasGerais = notas;
         const areaDinamica = document.getElementById('area-lista-dinamica');
         const contador = document.getElementById('contador-notas');
 

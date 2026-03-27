@@ -83,6 +83,8 @@ class ConfiguracaoSistema(models.Model):
         help_text="Se desligado, não salva a foto original no campo comprovante_original_url"
     )
 
+
+
     # ===== CÓDIGOS DE OCORRÊNCIA QUE ATIVAM A IA =====
     codigos_ocorrencia_yolo = models.CharField(
         max_length=100,

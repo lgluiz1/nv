@@ -23,7 +23,7 @@ def apenas_operacional(view_func):
         # Se a view der erro (tipo Manifesto 404), o Django deve mostrar o erro, 
         # e não te deslogar.
         if hasattr(request.user, 'motorista_perfil') and \
-           request.user.motorista_perfil.tipo_usuario == 'OPERACIONAL':
+           request.user.motorista_perfil.tipo_usuario in ['OPERACIONAL', 'SAC', 'GESTOR']:
             return view_func(request, *args, **kwargs)
         
         # Se for motorista, manda para o app

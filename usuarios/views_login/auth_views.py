@@ -14,6 +14,12 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.authentication import TokenAuthentication
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from usuarios.serializers import CustomTokenObtainPairSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
+
 @method_decorator(csrf_exempt, name='dispatch')
 class VerificarCPFView(APIView):
     permission_classes = [AllowAny]
@@ -27,16 +33,21 @@ class VerificarCPFView(APIView):
 
         try:
             motorista = Motorista.objects.get(cpf=cpf)
+            if motorista.user is not None:
+                return Response({"status": "USUARIO_EXISTENTE"})
+            return Response({
+                "status": "NOVO_USUARIO",
+                "nome": motorista.nome_completo
+            })
         except Motorista.DoesNotExist:
+            from usuarios.models import PreCadastroSAC
+            pre_cadastro = PreCadastroSAC.objects.filter(cpf=cpf, ativo=True).first()
+            if pre_cadastro:
+                return Response({
+                    "status": "NOVO_USUARIO",
+                    "nome": pre_cadastro.nome
+                })
             return Response({"status": "NAO_ENCONTRADO"})
-
-        if motorista.user is not None:
-            return Response({"status": "USUARIO_EXISTENTE"})
-
-        return Response({
-            "status": "NOVO_USUARIO",
-            "nome": motorista.nome_completo
-        })
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -55,29 +66,51 @@ class PrimeiroAcessoView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        motorista = None
+        user_to_create = None
+
         try:
             motorista = Motorista.objects.get(cpf=cpf)
+            if motorista.user:
+                return Response({"erro": "Usuário já existe"}, status=400)
+            
+            user_to_create = User.objects.create_user(
+                username=cpf,
+                password=senha,
+                first_name=motorista.nome_completo.split()[0]
+            )
+            motorista.user = user_to_create
+            motorista.save()
+            
         except Motorista.DoesNotExist:
-            return Response({"erro": "Motorista não encontrado"}, status=404)
+            from usuarios.models import PreCadastroSAC
+            pre_cadastro = PreCadastroSAC.objects.filter(cpf=cpf, ativo=True).first()
+            if not pre_cadastro:
+                return Response({"erro": "Motorista/SAC não encontrado"}, status=404)
+            
+            user_to_create = User.objects.create_user(
+                username=cpf,
+                password=senha,
+                first_name=pre_cadastro.nome.split()[0]
+            )
+            user_to_create.is_staff = True
+            user_to_create.save()
+            
+            motorista = Motorista.objects.create(
+                user=user_to_create,
+                cpf=cpf,
+                nome_completo=pre_cadastro.nome,
+                filial=pre_cadastro.filial,
+                tipo_usuario='GESTOR' if pre_cadastro.is_gestor else 'SAC'
+            )
 
-        if motorista.user:
-            return Response({"erro": "Usuário já existe"}, status=400)
-
-        user = User.objects.create_user(
-            username=cpf,
-            password=senha,
-            first_name=motorista.nome_completo.split()[0]
-        )
-
-        motorista.user = user
-        motorista.save()
-
-        refresh = RefreshToken.for_user(user)
+        refresh = RefreshToken.for_user(user_to_create)
 
         return Response({
             "access": str(refresh.access_token),
             "refresh": str(refresh)
         })
+
 
 
 class MeView(APIView):

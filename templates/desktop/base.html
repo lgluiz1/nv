@@ -130,10 +130,17 @@
         <div class="border-top border-secondary opacity-25 my-2"></div>
         <small class="ms-4 menu-text d-block mb-1" style="font-size: 0.65rem; letter-spacing: 1px; color: #fff;">SUPORTE & AJUDA</small>
         
-        <a href="{% url 'operacional:suporte' %}" class="nav-link {% if '/suporte/' in request.path %}active-menu{% endif %}">
+        <a href="{% url 'suporte:painel_sac' %}" class="nav-link {% if '/suporte/' in request.path %}active-menu{% endif %}">
             <i class="bi bi-headset"></i>
             <span class="menu-text">Suporte Online</span>
         </a>
+
+        {% if request.user.motorista_perfil.cargo == 'GESTOR' or request.user.motorista_perfil.cargo == 'GERENTE' %}
+        <a href="{% url 'gestao:gestao_usuarios' %}" class="nav-link {% if '/gestao/' in request.path %}active-menu{% endif %}">
+            <i class="bi bi-person-gear"></i>
+            <span class="menu-text">Gestao de Usuarios</span>
+        </a>
+        {% endif %}
         <a href="{% url 'operacional:treinamentos' %}" class="nav-link {% if '/treinamentos/' in request.path %}active-menu{% endif %}">
             <i class="bi bi-play-circle"></i>
             <span class="menu-text">Treinamentos</span>

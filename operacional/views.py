@@ -18,16 +18,16 @@ from django.db.models import Count, Q, Sum, Avg, ExpressionWrapper, FloatField, 
 from collections import defaultdict
 
 def login_operacional_view(request):
-    # ✅ NOVO: Se o usuário já estiver logado e for OPERACIONAL, manda direto pro dashboard
+    # ✅ NOVO: Se o usuário já estiver logado, redireciona para a página certa
     if request.method == 'GET':
         if request.user.is_authenticated:
             try:
-                # Verifica se o perfil vinculado ao usuário é OPERACIONAL
-                if request.user.motorista_perfil.tipo_usuario == 'OPERACIONAL':
+                tipo = request.user.motorista_perfil.tipo_usuario
+                if tipo == 'OPERACIONAL':
                     return redirect('/dashboard/') 
+                elif tipo in ['SAC', 'GESTOR']:
+                    return redirect('/dashboard/')
             except Exception:
-                # Se não tiver perfil ou for motorista, deixa carregar o login 
-                # (ou você pode dar logout para limpar a sessão do motorista aqui)
                 pass
         return render(request, 'desktop/login.html')
 
@@ -39,14 +39,13 @@ def login_operacional_view(request):
             acao = data.get('acao') 
 
             try:
-                # Busca o perfil pelo CPF
                 perfil = Motorista.objects.get(cpf=cpf)
             except Motorista.DoesNotExist:
                 return JsonResponse({'status': 'erro', 'message': 'CPF não registrado.'}, status=404)
 
-            # 1. Verifica se é OPERACIONAL (Segurança extra)
-            if perfil.tipo_usuario != 'OPERACIONAL':
-                return JsonResponse({'status': 'erro', 'message': 'Acesso restrito ao operacional.'}, status=403)
+            # 1. Verifica se tem permissão para painéis Web
+            if perfil.tipo_usuario not in ['OPERACIONAL', 'SAC', 'GESTOR']:
+                return JsonResponse({'status': 'erro', 'message': 'Acesso restrito ao painel.'}, status=403)
 
             # 2. Lógica de Verificação Inicial
             if acao == 'verificar':
@@ -55,24 +54,19 @@ def login_operacional_view(request):
                 else:
                     return JsonResponse({'status': 'usuario_registrado', 'nome': perfil.nome_completo})
 
+            # Definição do link baseado no cargo
+            url_destino = '/dashboard/'
+
             # 3. Lógica de Cadastro de Senha
             if acao == 'cadastrar':
                 if not perfil.user:
-                    # 1. Cria o usuário com o CPF como username
                     user = User.objects.create_user(username=cpf, password=senha)
-                    
-                    # 2. Pega o primeiro nome do campo nome_completo da tabela Motorista
                     if perfil.nome_completo:
                         user.first_name = perfil.nome_completo.split()[0]
-                        # Opcional: Se quiser salvar o restante no last_name
                         nomes = perfil.nome_completo.split()
                         if len(nomes) > 1:
                             user.last_name = " ".join(nomes[1:])
-                    
-                    # 3. SALVA o objeto user (Isso é o que estava faltando!)
                     user.save()
-                    
-                    # 4. Vincula ao perfil do motorista
                     perfil.user = user
                     perfil.save()
                 else:
@@ -80,14 +74,14 @@ def login_operacional_view(request):
                     perfil.user.save()
                 
                 login(request, perfil.user)
-                return JsonResponse({'status': 'sucesso', 'url': '/dashboard/'})
+                return JsonResponse({'status': 'sucesso', 'url': url_destino})
 
             # 4. Lógica de Login Comum
             if acao == 'login':
                 user = authenticate(request, username=cpf, password=senha)
                 if user:
                     login(request, user)
-                    return JsonResponse({'status': 'sucesso', 'url': '/dashboard/'})
+                    return JsonResponse({'status': 'sucesso', 'url': url_destino})
                 else:
                     return JsonResponse({'status': 'erro', 'message': 'Senha incorreta.'}, status=401)
 

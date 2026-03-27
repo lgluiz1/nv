@@ -33,6 +33,7 @@ class ConfiguracaoSistemaAdmin(admin.ModelAdmin):
             'fields': ('codigos_ocorrencia_yolo',),
             'description': 'Quais códigos de ocorrência TMS devem passar pelo processamento da IA (YOLO).'
         }),
+
     )
 
     def has_add_permission(self, request):

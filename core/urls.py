@@ -15,9 +15,10 @@ urlpatterns = [
     path('app/', include(('mobile.urls', 'mobile'), namespace='mobile')),
     path('', include(('operacional.urls', 'operacional'), namespace='operacional')),
     path('ia/', include(('AgenteIa.urls', 'AgenteIa'), namespace='AgenteIa')),
-    # Whatsapp Bot URLs
-    #path('botwhatsapp/', include(('botWhatsapp.urls', 'botWhatsapp'), namespace='botWhatsapp')),
+    path('suporte/', include('suporte.urls')),
     path('', include('pwa.urls')),
+    # Gestao de Usuarios
+    path('gestao/', include('usuarios.gestao_urls')),
 ]
 
 # Configuração para servir arquivos de mídia (Fotos de comprovantes) em ambiente de desenvolvimento

@@ -40,3 +40,52 @@ class MotoristaPerfilSerializer(serializers.ModelSerializer):
             'user_username',
         )
         read_only_fields = fields
+
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+import re
+from usuarios.models import PreCadastroSAC
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Sobrescreve o login padrão (JWT) para verificar se o CPF tentado existe na lista de
+    Pré-Cadastro do SAC. Se existir e não tiver conta no Django, a conta é criada automaticamente.
+    """
+    def validate(self, attrs):
+        cpf_digitado = attrs.get('username') or attrs.get('cpf')
+        
+        if cpf_digitado:
+            cpf_limpo = re.sub(r'\D', '', cpf_digitado)
+            # Garanta que o username passado para a autenticação final seja o limpo
+            attrs['username'] = cpf_limpo
+            
+            # Se não existe usuário no Django com esse CPF
+            if not User.objects.filter(username=cpf_limpo).exists():
+                pre_cadastro = PreCadastroSAC.objects.filter(cpf=cpf_limpo, ativo=True).first()
+                if pre_cadastro:
+                    # Cria o User do Django (senha será a que o usuário preencheu agora)
+                    user = User.objects.create_user(
+                        username=cpf_limpo,
+                        password=attrs.get('password'),
+                        first_name=pre_cadastro.nome.split()[0], # Primeiro nome
+                    )
+                    user.is_staff = True # SAC precisa acessar painel web, que pode ter partes do admin
+                    user.save()
+                    
+                    # Cria o perfil Motorista (usado unificadamente para todos)
+                    motorista, created = Motorista.objects.get_or_create(user=user)
+                    motorista.cpf = cpf_limpo
+                    motorista.nome_completo = pre_cadastro.nome
+                    motorista.filial = pre_cadastro.filial
+                    motorista.tipo_usuario = 'GESTOR' if pre_cadastro.is_gestor else 'SAC'
+                    motorista.save()
+
+        # Processo normal de validação de senha (se recem criado, a senha já confere)
+        data = super().validate(attrs)
+        
+        # Opcional: retorna mais dados em /login
+        user = self.user
+        if hasattr(user, 'motorista_perfil'):
+            data['tipo_usuario'] = user.motorista_perfil.tipo_usuario
+            data['nome'] = user.motorista_perfil.nome_completo
+            
+        return data

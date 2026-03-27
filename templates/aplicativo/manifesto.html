@@ -1510,12 +1510,110 @@
         }
 
     </script>
+    <!-- BOTÃO FLUTUANTE SAC -->
+    <button class="btn btn-primary rounded-circle shadow-lg d-flex align-items-center justify-content-center" 
+            style="position: fixed; bottom: 80px; right: 20px; width: 60px; height: 60px; z-index: 1050; border: 3px solid white;"
+            data-bs-toggle="modal" data-bs-target="#modalSuporte">
+        <i class="bi bi-chat-dots-fill fs-3 text-white"></i>
+        <span class="position-absolute top-0 start-100 translate-middle p-2 bg-danger border border-light rounded-circle" id="badge-suporte-unread" style="display: none;">
+            <span class="visually-hidden">Novas mensagens</span>
+        </span>
+    </button>
+
+    <!-- MODAL DE TICKETS DE SUPORTE -->
+    <div class="modal fade" id="modalSuporte" tabindex="-1" aria-hidden="true" style="z-index: 1060;">
+        <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down modal-lg">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; height: 90vh;">
+                <!-- HEADER CHAT/LISTA -->
+                <div class="modal-header border-0 pb-3 pt-4 px-4 bg-primary text-white" style="border-radius: 20px 20px 0 0;">
+                    <button class="btn text-white me-2" id="btn-voltar-tickets" style="display: none;" onclick="voltarListaTickets()">
+                        <i class="bi bi-arrow-left fs-4"></i>
+                    </button>
+                    <h5 class="modal-title fw-bold flex-grow-1" id="suporte-modal-titulo">Meus Chamados</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                
+                <!-- BODY: LISTA DE TICKETS -->
+                <div class="modal-body p-0 position-relative" id="view-lista-tickets" style="background-color: #f8f9fa;">
+                    <div class="p-3 text-center bg-white border-bottom shadow-sm z-1 position-relative">
+                        <button class="btn btn-outline-primary rounded-pill fw-bold" onclick="abrirNovoTicket()">
+                            <i class="bi bi-plus-circle-fill me-1"></i> Abrir Novo Chamado
+                        </button>
+                    </div>
+                    <div class="p-3" id="container-tickets-ativos">
+                        <!-- Tickets preenchidos via JS -->
+                        <div class="text-center text-muted p-4">
+                            <i class="bi bi-chat-square-text fs-1"></i>
+                            <p class="mt-2 text-sm">Nenhum chamado aberto. Se precisar de ajuda com notas fiscais ou tiver um problema operacional, abra um chamado.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BODY: CRIAR NOVO TICKET -->
+                <div class="modal-body p-3" id="view-novo-ticket" style="display: none;">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Assunto do Chamado</label>
+                        <select class="form-select" id="suporte-novo-categoria">
+                            <option value="">Selecione...</option>
+                            <option value="DUVIDA_NF">Dúvida sobre Nota Fiscal</option>
+                            <option value="PROBLEMA_ENDERECO">Problema no Endereço / Telefone Errado</option>
+                            <option value="PROBLEMA_APP">Problema no Aplicativo</option>
+                            <option value="AVARIA_CARGA">Avaria na Carga / Acidente</option>
+                            <option value="AGUARDE_RETORNO">Preciso de liberação / Aguardo retorno</option>
+                            <option value="OUTROS">Outro Motivo</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small"><i class="bi bi-file-earmark-text"></i> Referenciar NF (Opcional)</label>
+                        <select class="form-select" id="suporte-novo-nf">
+                            <option value="">(Nenhuma NF Específica)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Detalhes do problema</label>
+                        <textarea class="form-control" id="suporte-novo-msg" rows="3" placeholder="Digite detalhadamente o que você precisa..."></textarea>
+                    </div>
+                    <div class="d-grid mt-4">
+                        <button class="btn btn-primary rounded-pill fw-bold shadow-sm py-2" onclick="criarNovoTicket()">
+                            Iniciar Atendimento <i class="bi bi-send-fill ms-2"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- BODY: CHAT ATIVO -->
+                <div class="modal-body p-0 flex-column h-100" id="view-chat-ativo" style="display: none;">
+                    <input type="hidden" id="suporte-ticket-ativo-id">
+                    <div class="flex-grow-1 p-3 overflow-auto chat-container" id="suporte-chat-mensagens" 
+                         style="background-color: #efeae2; background-image: url('data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Ccircle cx=\'2\' cy=\'2\' r=\'1\' fill=\'%23dcd2c6\'/%3E%3C/svg%3E'); padding-bottom: 20px;">
+                        <!-- Balões de MSG -->
+                    </div>
+                    
+                    <div class="p-2 bg-light border-top shadow-sm d-flex gap-2 position-relative" id="suporte-chat-input-area" style="z-index: 10;">
+                        <input type="file" id="suporte-chat-arq" class="d-none" accept="image/*,video/*,audio/*" onchange="previewUploadArquivo()">
+                        <button class="btn btn-light border text-secondary" onclick="document.getElementById('suporte-chat-arq').click()">
+                            <i class="bi bi-paperclip fs-5"></i>
+                        </button>
+                        <button class="btn btn-light border text-danger" id="btn-gravar-audio" onclick="toggleGravarAudio()">
+                            <i class="bi bi-mic-fill fs-5"></i>
+                        </button>
+                        <input type="text" class="form-control border-0 rounded-pill px-3 shadow-none bg-white" id="suporte-chat-input" placeholder="Mensagem...">
+                        <button class="btn btn-primary rounded-circle shadow-sm d-flex align-items-center justify-content-center" style="width: 45px; height: 45px; flex-shrink: 0;" onclick="enviarMensagemChat()">
+                            <i class="bi bi-send-fill ms-1 mt-1"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
     <script src="{% static 'js/serviceworker.js' %}?v=1.34"></script>
     <script src="/static/js/login_motorista/authFetch.js"></script>
     <script src="{% static 'js/manifesto_v17.js' %}"></script>
     <script src="{% static 'js/pwa_tracking.js' %}"></script>
     <script src="{% static 'js/offiline.js' %}"></script>
     <script src="{% static 'js/historico_v1.js' %}"></script>
+    <script src="{% static 'js/suporte_app.js' %}"></script>
 
 </body>
 

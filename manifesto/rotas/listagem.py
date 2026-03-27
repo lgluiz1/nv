@@ -16,6 +16,7 @@ class ListarNotasManifestoView(APIView):
             baixa = nf.baixa_info.all().last() 
             
             data.append({
+                'id': nf.id,
                 'numero_nota': nf.numero_nota,
                 'chave_acesso': nf.chave_acesso,
                 'destinatario': nf.destinatario,
