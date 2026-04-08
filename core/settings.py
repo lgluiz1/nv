@@ -16,18 +16,11 @@ load_dotenv(BASE_DIR / '.env')
 # Quick-start development settings - unsuitable for production
 SECRET_KEY = os.getenv('SECRET_KEY', 'default-safe-key-if-not-in-env')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = [
-    '127.0.0.1',
-    'localhost',
-    '0.0.0.0',
-    'entregas.luizgustavo.tech',
-    '*', # Permissivo para depuração, ajustar depois
-]
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
 
-CSRF_TRUSTED_ORIGINS = [
-    'https://be81-191-241-65-196.ngrok-free.app',
-    'https://entregas.luizgustavo.tech',
-]
+CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',')
+if not CSRF_TRUSTED_ORIGINS[0]: # Remove vazio se não houver no .env
+    CSRF_TRUSTED_ORIGINS = []
 
 # Application definition
 
@@ -73,7 +66,7 @@ CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            'hosts': [('redis', 6379)],
+            'hosts': [os.getenv('REDIS_URL', 'redis://redis:6379/0')],
         },
     },
 }
@@ -147,12 +140,11 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        #'NAME': 'st63136_dev_app_transportadora',
-        'NAME': 'st63136_entregas_quickdelivery',
-        'USER': 'st63136_quickdelivery',
-        'PASSWORD': 'Qu1ck.2026',
-        'HOST': 'st63136.ispot.cc',  # 👈 DEVE SER O DOMÍNIO OU IP DA INTERSERVER
-        'PORT': '3306',              # 👈 GARANTA QUE A PORTA ESTÁ DEFINIDA
+        'NAME': os.getenv('DB_NAME', 'st63136_dev_app_transportadora'),
+        'USER': os.getenv('DB_USER', 'st63136_quickdelivery'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'Qu1ck.2026'),
+        'HOST': os.getenv('DB_HOST', 'st63136.ispot.cc'),
+        'PORT': os.getenv('DB_PORT', '3306'),
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
             'charset': 'utf8mb4',
@@ -161,21 +153,10 @@ DATABASES = {
 }
 
 # O HOST geralmente é o próprio domínio ou o IP do servidor iSpot
-FTP_HOST = "st63136.ispot.cc"  
-
-# As credenciais que você forneceu
-FTP_USER = "st63136"
-FTP_PASS = "xh3!B8Wp"
-
-# A URL base onde as imagens ficarão visíveis na internet
-# Ajuste o caminho final conforme a pasta que você criar no FTP
-# settings.py
-FTP_HOST = "st63136.ispot.cc"
-FTP_USER = "st63136"
-FTP_PASS = "xh3!B8Wp"
-
-# URL pública para o motorista visualizar no histórico depois
-FTP_BASE_URL = "https://st63136.ispot.cc/uploads/comprovantes-quickdelivery/"
+FTP_HOST = os.getenv('FTP_HOST', 'st63136.ispot.cc')
+FTP_USER = os.getenv('FTP_USER', 'st63136')
+FTP_PASS = os.getenv('FTP_PASS', 'xh3!B8Wp')
+FTP_BASE_URL = os.getenv('FTP_BASE_URL', 'https://st63136.ispot.cc/uploads/comprovantes-quickdelivery/')
 
 
 # Password validation
@@ -251,11 +232,9 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = "naorespondertest@gmail.com"
-EMAIL_HOST_PASSWORD = "nltb ondt ctza nghe" # Se for Gmail, use "Senha de App"
-
-# Nome que aparece no Remetente
-DEFAULT_FROM_EMAIL = 'Logística Quick Delivery <naorespondertest@gmail.com>'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', "naorespondertest@gmail.com")
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', "nltb ondt ctza nghe")
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'Logística Quick Delivery <naorespondertest@gmail.com>')
 
 # Configurações do PWA
 PWA_APP_NAME = 'Transportadora App'

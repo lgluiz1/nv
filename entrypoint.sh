@@ -3,20 +3,22 @@ echo "Esperando o banco de dados..."
 
 python - <<END
 import time
-import psycopg2
+import MySQLdb
+import os
 while True:
     try:
-        conn = psycopg2.connect(
-            dbname="${DB_NAME}",
-            user="${DB_USER}",
-            password="${DB_PASSWORD}",
-            host="db",
-            port=5432
+        conn = MySQLdb.connect(
+            db=os.getenv("DB_NAME"),
+            user=os.getenv("DB_USER"),
+            passwd=os.getenv("DB_PASSWORD"),
+            host=os.getenv("DB_HOST"),
+            port=int(os.getenv("DB_PORT", 3306))
         )
         conn.close()
         break
-    except:
-        time.sleep(1)
+    except Exception as e:
+        print(f"Aguardando MySQL... {e}")
+        time.sleep(2)
 END
 
 echo "Banco pronto!"
