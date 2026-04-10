@@ -13,7 +13,7 @@ async function iniciarCoracaoTracking() {
     const filial = typeof filialIdMotorista !== 'undefined' ? filialIdMotorista : 'todas';
     const ws_url = `${ws_scheme}://${window.location.host}/ws/painel-logistico/${filial}/?token=${token}`;
 
-    console.log("💓 [PWA Tracking] Conectando...", ws_url);
+    // Log removido por segurança (expunha token JWT na URL)
     socketTracking = new WebSocket(ws_url);
 
     socketTracking.onopen = () => {
@@ -68,7 +68,7 @@ async function enviarHeartbeat() {
             manifesto_id: manifestoAtual
         };
 
-        console.log("💓 [PWA Tracking] Enviando batimento:", payload);
+        // Log removido por segurança (expunha GPS e bateria)
         socketTracking.send(JSON.stringify(payload));
     } catch (err) {
         console.error("❌ [PWA Tracking] Erro no batimento:", err);

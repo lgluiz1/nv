@@ -1510,6 +1510,7 @@
         }
 
     </script>
+    {% if configuracao.habilitar_chat_sac %}
     <!-- BOTÃO FLUTUANTE SAC -->
     <button class="btn btn-primary rounded-circle shadow-lg d-flex align-items-center justify-content-center" 
             style="position: fixed; bottom: 80px; right: 20px; width: 60px; height: 60px; z-index: 1050; border: 3px solid white;"
@@ -1519,6 +1520,7 @@
             <span class="visually-hidden">Novas mensagens</span>
         </span>
     </button>
+    {% endif %}
 
     <!-- MODAL DE TICKETS DE SUPORTE -->
     <div class="modal fade" id="modalSuporte" tabindex="-1" aria-hidden="true" style="z-index: 1060;">

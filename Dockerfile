@@ -37,8 +37,17 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt /transportadora_backend/
 RUN pip install --upgrade pip
 
-# Nota: Instalar o torch e ultralytics pode demorar um pouco no build
+# Instala PyTorch CPU-only (evita baixar ~5GB de bibliotecas CUDA/cuDNN desnecessárias)
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Instala o restante das dependências
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Remove bibliotecas NVIDIA residuais que o ultralytics pode ter puxado
+RUN pip uninstall -y nvidia-cublas-cu12 nvidia-cuda-cupti-cu12 nvidia-cuda-nvrtc-cu12 \
+    nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 \
+    nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-nccl2 nvidia-nvtx-cu12 \
+    nvidia-nvjitlink-cu12 triton 2>/dev/null || true
 
 # Copia o código da aplicação
 COPY . /transportadora_backend/

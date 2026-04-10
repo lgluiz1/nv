@@ -83,6 +83,12 @@ class ConfiguracaoSistema(models.Model):
         help_text="Se desligado, não salva a foto original no campo comprovante_original_url"
     )
 
+    habilitar_chat_sac = models.BooleanField(
+        default=False,
+        verbose_name="💬 Habilitar Chat SAC (App)",
+        help_text="Se ligado, o ícone de chat flutuante será visível para os motoristas no app Mobile."
+    )
+
 
 
     # ===== CÓDIGOS DE OCORRÊNCIA QUE ATIVAM A IA =====

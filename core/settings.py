@@ -13,21 +13,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / '.env')
 
-# Quick-start development settings - unsuitable for production
-SECRET_KEY = os.getenv('SECRET_KEY', 'default-safe-key-if-not-in-env')
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
-ALLOWED_HOSTS = [
-    '127.0.0.1',
-    'localhost',
-    '0.0.0.0',
-    'entregas.luizgustavo.tech',
-    '*', # Permissivo para depuração, ajustar depois
-]
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError('A variável SECRET_KEY não está definida no .env! Gere uma chave segura.')
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
 
-CSRF_TRUSTED_ORIGINS = [
-    'https://be81-191-241-65-196.ngrok-free.app',
-    'https://entregas.luizgustavo.tech',
-]
+_csrf_origins = os.getenv('CSRF_TRUSTED_ORIGINS', '')
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins.split(',') if o.strip()]
 
 # Application definition
 
@@ -66,23 +59,21 @@ INSTALLED_APPS = [
     'configuracao',
     'suporte',
 ]
-# Configurar Redis como channel layer
-# settings.py ou celery.py
-CELERY_BROKER_URL = 'redis://redis:6379/0'
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
 
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            'hosts': [('redis', 6379)],
+            'hosts': [os.getenv('REDIS_URL', 'redis://redis:6379/0')],
         },
     },
 }
 # Configurações do Web Push
 WEBPUSH_SETTINGS = {
-    "VAPID_PUBLIC_KEY": "BDBRd8eEkZHd6ZY_j3W4kaDZVuLr0MmrMqXJSox83EHT_re79BA01ViC3RzOy0P7J6UYcqOmhIyLqHJzdVUo8DQ",
-    "VAPID_PRIVATE_KEY": "IQhIJ9Q3ROfee2OfX11f5Rz-9lE_1AYA3TebZwDMEGI",
-    "VAPID_ADMIN_EMAIL": "legalhints@gmail.com"
+    "VAPID_PUBLIC_KEY": os.getenv('VAPID_PUBLIC_KEY', ''),
+    "VAPID_PRIVATE_KEY": os.getenv('VAPID_PRIVATE_KEY', ''),
+    "VAPID_ADMIN_EMAIL": os.getenv('VAPID_ADMIN_EMAIL', 'admin@quickdelivery.com.br')
 }
 
 
@@ -103,7 +94,12 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-CORS_ALLOW_ALL_ORIGINS = True
+_cors_origins = os.getenv('CORS_ALLOWED_ORIGINS', '')
+if _cors_origins:
+    CORS_ALLOW_ALL_ORIGINS = False
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(',') if o.strip()]
+else:
+    CORS_ALLOW_ALL_ORIGINS = DEBUG  # Só permite tudo em desenvolvimento
 CORS_ALLOW_CREDENTIALS = True
 
 # Configuração para servir arquivos de mídia (Fotos de comprovantes) em ambiente de desenvolvimento
@@ -131,29 +127,15 @@ TEMPLATES = [
 WSGI_APPLICATION = 'core.wsgi.application'
 
 
-# Database
-"""DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT'),
-    }
-}"""
 
-# MySQL Database Configuration
-# Interserver MySQL Settings
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'st63136_dev_app_transportadora',
-        #'NAME': 'st63136_entregas_quickdelivery',
-        'USER': 'st63136_quickdelivery',
-        'PASSWORD': 'Qu1ck.2026',
-        'HOST': 'st63136.ispot.cc',  # 👈 DEVE SER O DOMÍNIO OU IP DA INTERSERVER
-        'PORT': '3306',              # 👈 GARANTA QUE A PORTA ESTÁ DEFINIDA
+        'NAME': os.getenv('DB_NAME', 'st63136_dev_app_transportadora'),
+        'USER': os.getenv('DB_USER', 'st63136_quickdelivery'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST', 'st63136.ispot.cc'),
+        'PORT': os.getenv('DB_PORT', '3306'),
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
             'charset': 'utf8mb4',
@@ -161,27 +143,18 @@ DATABASES = {
     }
 }
 
-# O HOST geralmente é o próprio domínio ou o IP do servidor iSpot
-FTP_HOST = "st63136.ispot.cc"  
-
-# As credenciais que você forneceu
-FTP_USER = "st63136"
-FTP_PASS = "xh3!B8Wp"
-
-# A URL base onde as imagens ficarão visíveis na internet
-# Ajuste o caminho final conforme a pasta que você criar no FTP
-# settings.py
-FTP_HOST = "st63136.ispot.cc"
-FTP_USER = "st63136"
-FTP_PASS = "xh3!B8Wp"
-
-# URL pública para o motorista visualizar no histórico depois
-FTP_BASE_URL = "https://st63136.ispot.cc/uploads/comprovantes-quickdelivery/"
+# FTP Configuration
+FTP_HOST = os.getenv('FTP_HOST', 'st63136.ispot.cc')
+FTP_USER = os.getenv('FTP_USER')
+FTP_PASS = os.getenv('FTP_PASS')
+FTP_BASE_URL = os.getenv('FTP_BASE_URL', 'https://st63136.ispot.cc/uploads/comprovantes-quickdelivery/')
 
 
-# Password validation
 AUTH_PASSWORD_VALIDATORS = [
-    # ... (validações padrão)
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 6}},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
 
@@ -214,25 +187,31 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 # --- Configurações de Celery ---
-CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL')
-CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND')
+# CELERY_BROKER_URL já definido acima (linha 62) a partir do .env
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
 
-# --- Configurações Django REST Framework ---
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication', 
         'rest_framework.authentication.TokenAuthentication',
-        'rest_framework.authentication.SessionAuthentication', # Adicionado para suportar login via painel (Sessão)
+        'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
-        # Exige autenticação por padrão (pode ser sobrescrito nas Views)
         'rest_framework.permissions.IsAuthenticated',
-    )
+    ),
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '30/minute',
+        'user': '120/minute',
+    }
 }
 
 
@@ -252,11 +231,9 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = "naorespondertest@gmail.com"
-EMAIL_HOST_PASSWORD = "nltb ondt ctza nghe" # Se for Gmail, use "Senha de App"
-
-# Nome que aparece no Remetente
-DEFAULT_FROM_EMAIL = 'Logística Quick Delivery <naorespondertest@gmail.com>'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@quickdelivery.com.br')
 
 # Configurações do PWA
 PWA_APP_NAME = 'Transportadora App'

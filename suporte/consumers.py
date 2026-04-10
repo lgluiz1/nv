@@ -135,11 +135,16 @@ class SupportConsumer(AsyncWebsocketConsumer):
             from .models import TicketSuporte
             ticket = TicketSuporte.objects.get(id=ticket_id)
             
-            # Motorista do ticket acessa sempre
-            if ticket.motorista == user: return True
+            # Motorista do ticket acessa sempre (compara User, não Motorista)
+            if hasattr(ticket.motorista, 'user') and ticket.motorista.user == user:
+                return True
             
             if not hasattr(user, 'motorista_perfil'): return False
             perfil = user.motorista_perfil
+            
+            # Motorista vinculado ao ticket
+            if ticket.motorista == perfil:
+                return True
             
             # Se tiver PermissaoUsuario
             if hasattr(perfil, 'permissoes'):
@@ -150,7 +155,9 @@ class SupportConsumer(AsyncWebsocketConsumer):
             if perfil.cargo == 'GESTOR': return True
             
             return False
-        except Exception:
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
             return False
 
     @database_sync_to_async

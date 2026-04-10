@@ -7,7 +7,8 @@ class TicketSuporte(models.Model):
     STATUS_CHOICES = [
         ('CANAL_ABERTO', 'Aberto (Aguardando Atendimento)'),
         ('EM_ATENDIMENTO', 'Em Atendimento'),
-        ('RESOLVIDO', 'Resolvido')
+        ('RESOLVIDO', 'Resolvido'),
+        ('FECHADO', 'Fechado'),
     ]
 
     CATEGORIA_CHOICES = [

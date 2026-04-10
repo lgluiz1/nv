@@ -9,8 +9,9 @@ from rest_framework import status
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from usuarios.models import Motorista
+from usuarios.models import Motorista
 from manifesto.models import Ocorrencia
-
+from configuracao.models import ConfiguracaoSistema
 # Rota para a tela de Login (Acesso público)
 @never_cache
 def login_view(request):
@@ -31,11 +32,13 @@ def app_view(request):
     # Cia aera e rodoviaria
     cias = Ocorrencia.objects.filter(codigo_tms__in=['50', '51']).order_by('codigo_tms')
     
+    config = ConfiguracaoSistema.load()
     
     return render(request, 'aplicativo/manifesto.html', {
         'sucesso': sucesso,
         'problemas': problemas,
         'cia': cias,
+        'configuracao': config,
     })
 # Nota: A autenticação (login_required) aqui é apenas para evitar que 
 # a página seja vista. A verdadeira segurança da aplicação está nas 

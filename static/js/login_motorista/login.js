@@ -207,7 +207,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
 
 // Verifique se o Service Worker foi registrado com sucesso
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/serviceworker.js') // Rota padrão do django-pwa
-    .then(() => console.log("PWA: Service Worker Registrado!"))
+    navigator.serviceWorker.register('/serviceworker.js', { scope: '/app/' }) // Restringe o escopo à pasta do App
+    .then(() => console.log("PWA: Service Worker Registrado no escopo /app/!"))
     .catch((err) => console.log("PWA: Falha no Service Worker", err));
 }

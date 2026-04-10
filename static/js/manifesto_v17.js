@@ -1233,7 +1233,7 @@ async function carregarDadosCabecalho() {
 
         if (response && response.ok) {
             const dados = await response.json();
-            console.log("Dados do perfil carregados:", dados);
+            // Dados do perfil carregados com sucesso
 
             // 1. Atualiza a foto se existir
             const avatarContainer = document.querySelector('.avatar-circle');
