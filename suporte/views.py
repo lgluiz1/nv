@@ -309,62 +309,18 @@ class MensagemSuporteViewSet(viewsets.ModelViewSet):
             if not ftp_url:
                 raise serializers.ValidationError({"arquivo": "Falha no upload do arquivo."})
 
-        if hasattr(self.request.user, 'motorista_perfil'):
-            motorista = self.request.user.motorista_perfil
-            if ticket.motorista != motorista:
-                raise permissions.PermissionDenied("Voce nao tem acesso a este ticket.")
-            
-            save_kwargs = {
-                'enviado_por_motorista': True,
-                'atendente': None,
-            }
-            if tipo_msg != 'TEXTO':
-                save_kwargs['tipo'] = tipo_msg
-            
-            msg = serializer.save(**save_kwargs)
-            
-            # Se fez upload FTP, salva a URL no campo texto (junto com o texto existente ou sozinho)
-            if ftp_url:
-                msg.arquivo = ftp_url  # Guarda URL no campo arquivo
-                msg.tipo = tipo_msg
-                msg.save(update_fields=['arquivo', 'tipo'])
-            
-            # Atualiza updated_at no ticket
-            ticket.updated_at = timezone.now()
-            ticket.save(update_fields=['updated_at'])
-            
-            # Notifica SAC sobre nova mensagem
-            channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                f'filial_suporte_{ticket.filial_id}',
-                {
-                    'type': 'ticket_updated',
-                    'ticket_id': ticket.id,
-                    'action': 'nova_mensagem',
-                    'preview': msg.texto[:50] if msg.texto else f'[{msg.tipo}]'
-                }
-            )
-            # Notifica ws do ticket
-            async_to_sync(channel_layer.group_send)(
-                f'ticket_{ticket.id}',
-                {
-                    'type': 'chat_message',
-                    'id': msg.id,
-                    'ticket_id': ticket.id,
-                    'remetente': ticket.motorista.nome_completo,
-                    'enviado_por_motorista': msg.enviado_por_motorista,
-                    'mensagem': msg.texto,
-                    'tipo': msg.tipo,
-                    'arquivo_url': ftp_url or (str(msg.arquivo) if msg.arquivo else None),
-                    'created_at': msg.created_at.isoformat()
-                }
-            )
+        user = self.request.user
+        perfil = getattr(user, 'motorista_perfil', None)
+        
+        # Define se é o motorista dono do ticket ou um agente (SAC/Gestor)
+        is_agente = (perfil and perfil.tipo_usuario in ['SAC', 'GESTOR']) or user.is_staff or user.is_superuser
+        is_dono_ticket = (perfil and ticket.motorista == perfil)
 
-        else:
-            # Logica para SAC respondendo (via painel Web)
+        if is_agente:
+            # Logica para SAC respondendo (via painel Web ou App)
             save_kwargs = {
                 'enviado_por_motorista': False,
-                'atendente': self.request.user,
+                'atendente': user,
             }
             if tipo_msg != 'TEXTO':
                 save_kwargs['tipo'] = tipo_msg
@@ -379,7 +335,7 @@ class MensagemSuporteViewSet(viewsets.ModelViewSet):
             # Atualiza ticket para EM_ATENDIMENTO se ainda for CANAL_ABERTO
             if ticket.status == 'CANAL_ABERTO':
                 ticket.status = 'EM_ATENDIMENTO'
-                ticket.atendente = self.request.user
+                ticket.atendente = user
             ticket.updated_at = timezone.now()
             ticket.save(update_fields=['status', 'atendente', 'updated_at'])
             
@@ -391,7 +347,7 @@ class MensagemSuporteViewSet(viewsets.ModelViewSet):
                     'type': 'chat_message',
                     'id': msg.id,
                     'ticket_id': ticket.id,
-                    'remetente': self.request.user.get_full_name() or self.request.user.username,
+                    'remetente': user.get_full_name() or user.username,
                     'enviado_por_motorista': msg.enviado_por_motorista,
                     'mensagem': msg.texto,
                     'tipo': msg.tipo,
@@ -399,4 +355,51 @@ class MensagemSuporteViewSet(viewsets.ModelViewSet):
                     'created_at': msg.created_at.isoformat()
                 }
             )
+
+        elif is_dono_ticket:
+            # Lógica para o motorista dono do chamado enviando mensagem
+            save_kwargs = {
+                'enviado_por_motorista': True,
+                'atendente': None,
+            }
+            if tipo_msg != 'TEXTO':
+                save_kwargs['tipo'] = tipo_msg
+            
+            msg = serializer.save(**save_kwargs)
+            
+            if ftp_url:
+                msg.arquivo = ftp_url
+                msg.tipo = tipo_msg
+                msg.save(update_fields=['arquivo', 'tipo'])
+            
+            ticket.updated_at = timezone.now()
+            ticket.save(update_fields=['updated_at'])
+            
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f'filial_suporte_{ticket.filial_id}',
+                {
+                    'type': 'ticket_updated',
+                    'ticket_id': ticket.id,
+                    'action': 'nova_mensagem',
+                    'preview': msg.texto[:50] if msg.texto else f'[{msg.tipo}]'
+                }
+            )
+            async_to_sync(channel_layer.group_send)(
+                f'ticket_{ticket.id}',
+                {
+                    'type': 'chat_message',
+                    'id': msg.id,
+                    'ticket_id': ticket.id,
+                    'remetente': ticket.motorista.nome_completo,
+                    'enviado_por_motorista': msg.enviado_por_motorista,
+                    'mensagem': msg.texto,
+                    'tipo': msg.tipo,
+                    'arquivo_url': ftp_url or (str(msg.arquivo) if msg.arquivo else None),
+                    'created_at': msg.created_at.isoformat()
+                }
+            )
+        else:
+            raise permissions.PermissionDenied("Você não tem acesso a este ticket.")
+
 

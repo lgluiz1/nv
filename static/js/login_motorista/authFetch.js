@@ -100,7 +100,7 @@ async function refreshToken() {
 function logout() {
     localStorage.clear();
     if (!window.location.pathname.includes('/login/')) {
-        window.location.href = '/app/login/';
+        window.location.href = '/login/';
     }
 }
 

@@ -58,6 +58,8 @@ INSTALLED_APPS = [
     'AgenteIa',
     'configuracao',
     'suporte',
+    'sac_mobile',
+    'auditoria',
 ]
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
 
@@ -78,7 +80,7 @@ WEBPUSH_SETTINGS = {
 
 
 # (Deve ser a URL da sua página HTML de login)
-LOGIN_URL = '/app/login/'
+LOGIN_URL = '/login/'
 # URL para onde o Django deve REDIRECIONAR o usuário APÓS o login bem-sucedido
 # (Não é estritamente necessário para a API, mas bom para evitar redirecionamentos embutidos)
 LOGIN_REDIRECT_URL = '/app/'
@@ -134,8 +136,8 @@ DATABASES = {
         'NAME': os.getenv('DB_NAME', 'st63136_dev_app_transportadora'),
         'USER': os.getenv('DB_USER', 'st63136_quickdelivery'),
         'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST', 'st63136.ispot.cc'),
-        'PORT': os.getenv('DB_PORT', '3306'),
+        'HOST': os.getenv('DB_HOST', 'host.docker.internal'),
+        'PORT': os.getenv('DB_PORT', '3308'),
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
             'charset': 'utf8mb4',
@@ -217,8 +219,8 @@ REST_FRAMEWORK = {
 
 # --- Configurações JWT (JSON Web Token) ---
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=365),
 
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -241,7 +243,7 @@ PWA_APP_DESCRIPTION = "Aplicativo para gestão de entregas e manifestos"
 PWA_APP_THEME_COLOR = '#0d6efd' # Cor azul do seu app
 PWA_APP_BACKGROUND_COLOR = '#ffffff'
 PWA_APP_DISPLAY = 'standalone'
-PWA_APP_SCOPE = '/'
+PWA_APP_SCOPE = '/app/'
 PWA_APP_ORIENTATION = 'portrait'
 PWA_APP_START_URL = '/app/' # Página inicial do motorista
 PWA_APP_STATUS_BAR_COLOR = 'default'

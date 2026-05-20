@@ -6,16 +6,18 @@ from django.conf.urls.static import static # Necessário para arquivos de mídia
 from django.views.generic import RedirectView
 
 urlpatterns = [
-    # Redireciona a raiz (/) para /app/login/
-    path('', RedirectView.as_view(url='/app/login/', permanent=True)),
+    # Redireciona a raiz (/) para /login/
+    path('', RedirectView.as_view(url='/login/', permanent=True)),
     path('admin/', admin.site.urls),
     path('api/auth/', include('core.rotas.auth')),
     path('auth/', include(('usuarios.urls', 'usuarios'), namespace='usuarios')),
     path('api/', include(('manifesto.urls', 'manifesto'), namespace='manifesto')),
     path('app/', include(('mobile.urls', 'mobile'), namespace='mobile')),
+    path('app-sac/', include(('sac_mobile.urls', 'sac_mobile'), namespace='sac_mobile')),
     path('', include(('operacional.urls', 'operacional'), namespace='operacional')),
     path('ia/', include(('AgenteIa.urls', 'AgenteIa'), namespace='AgenteIa')),
     path('suporte/', include('suporte.urls')),
+    path('auditoria/', include('auditoria.urls', namespace='auditoria')),
     path('', include('pwa.urls')),
     # Gestao de Usuarios
     path('gestao/', include('usuarios.gestao_urls')),

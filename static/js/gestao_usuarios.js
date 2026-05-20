@@ -109,6 +109,7 @@ function abrirModalCriar() {
     document.getElementById('campo-cpf').disabled = false;
     document.getElementById('campo-tipo').value = 'OPERACIONAL';
     document.getElementById('campo-cargo').value = 'MEMBRO';
+    document.getElementById('campo-is-sac-mobile').checked = false;
     new bootstrap.Modal(document.getElementById('modalUsuario')).show();
 }
 
@@ -121,6 +122,7 @@ function abrirModalEditar(u) {
     document.getElementById('campo-cpf').disabled = true;
     document.getElementById('campo-tipo').value = u.tipo_usuario;
     document.getElementById('campo-cargo').value = u.cargo;
+    document.getElementById('campo-is-sac-mobile').checked = u.is_sac_mobile === true;
     const filialEl = document.getElementById('campo-filial');
     if (filialEl) filialEl.value = u.filial_id || '';
     new bootstrap.Modal(document.getElementById('modalUsuario')).show();
@@ -135,10 +137,11 @@ async function salvarUsuario() {
     const cargo = document.getElementById('campo-cargo').value;
     const filialEl = document.getElementById('campo-filial');
     const filial = filialEl ? filialEl.value : '';
+    const is_sac_mobile = document.getElementById('campo-is-sac-mobile').checked;
     
     if (!nome) return Swal.fire('Erro', 'Informe o nome', 'error');
     
-    const body = { nome, cpf, tipo_usuario: tipo, cargo: cargo };
+    const body = { nome, cpf, tipo_usuario: tipo, cargo: cargo, is_sac_mobile: is_sac_mobile };
     if (filial) body.filial_id = parseInt(filial);
     
     let url, method;

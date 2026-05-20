@@ -33,7 +33,10 @@ class ConfiguracaoSistemaAdmin(admin.ModelAdmin):
             'fields': ('codigos_ocorrencia_yolo',),
             'description': 'Quais códigos de ocorrência TMS devem passar pelo processamento da IA (YOLO).'
         }),
-
+        ('💬 SAC & Suporte', {
+            'fields': ('habilitar_chat_sac',),
+            'description': 'Controla a visibilidade do botão de chat no app do motorista.'
+        }),
     )
 
     def has_add_permission(self, request):

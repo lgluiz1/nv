@@ -67,6 +67,9 @@ class Motorista(models.Model):
     ultima_lat = models.FloatField(null=True, blank=True, verbose_name="Última Latitude")
     ultima_lng = models.FloatField(null=True, blank=True, verbose_name="Última Longitude")
 
+    # NOVO: Define se o usuário SAC acessa pelo celular (PWA) em vez do painel
+    is_sac_mobile = models.BooleanField(default=False, verbose_name="Acesso App SAC")
+
     # NOVO: Vínculo do usuário com a Filial (Para filtro operacional automatizado)
     filial = models.ForeignKey(
         'Filial',

@@ -167,47 +167,36 @@ const installBtn = document.getElementById('btn-instalar-app');
 
 // O navegador dispara este evento se o app puder ser instalado
 window.addEventListener('beforeinstallprompt', (e) => {
-    // Impede o Chrome de mostrar a barra automática
     e.preventDefault();
-    // Salva o evento para ser disparado pelo nosso botão
-    deferredPrompt = e;
-    
-    // Mostra o nosso banner customizado
-    installBanner.style.display = 'block';
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+        console.log("PWA: Evento beforeinstallprompt disparado (Mobile)!");
+        deferredPrompt = e;
+        installBanner.style.display = 'block';
+    } else {
+        console.log("PWA: Evento beforeinstallprompt disparado, mas oculto por ser PC.");
+    }
 });
 
 installBtn.addEventListener('click', async () => {
     if (deferredPrompt) {
-        // Mostra o prompt oficial do navegador
         deferredPrompt.prompt();
-        
-        // Aguarda a escolha do motorista
         const { outcome } = await deferredPrompt.userChoice;
         console.log(`Escolha do motorista: ${outcome}`);
-        
-        // Esconde o banner independente da escolha
         installBanner.style.display = 'none';
         deferredPrompt = null;
     }
 });
 
-// Esconde o banner se o app for instalado com sucesso
 window.addEventListener('appinstalled', () => {
     installBanner.style.display = 'none';
     deferredPrompt = null;
     console.log('PWA instalado com sucesso!');
 });
-// Adicione isso no seu script do banner
-window.addEventListener('beforeinstallprompt', (e) => {
-    console.log("PWA: Evento beforeinstallprompt disparado!"); // Verifique isso no console
-    e.preventDefault();
-    deferredPrompt = e;
-    installBanner.style.display = 'block';
-});
 
 // Verifique se o Service Worker foi registrado com sucesso
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/serviceworker.js') // Rota padrão do django-pwa
-    .then(() => console.log("PWA: Service Worker Registrado!"))
+    navigator.serviceWorker.register('/serviceworker.js', { scope: '/app/' }) // Restringe o escopo à pasta do App
+    .then(() => console.log("PWA: Service Worker Registrado no escopo /app/!"))
     .catch((err) => console.log("PWA: Falha no Service Worker", err));
 }

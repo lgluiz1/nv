@@ -1,64 +1,93 @@
-# Arquivo docker-compose.yml atualizado para Docker Desktop moderno (v2+)
+# =============================================================
+# Docker Compose - QuickTrack (Produção)
+# =============================================================
+# Ao subir na VPS do cliente, o backend automaticamente:
+#   1. Aguarda o MySQL ficar disponível
+#   2. Roda migrações do banco
+#   3. Coleta arquivos estáticos
+#   4. Cria superusuário admin + envia email com credenciais
+#   5. Inicia o servidor Daphne (ASGI)
+#
+# Infraestrutura do cliente:
+#   - Nginx reverse proxy (HTTPS) → porta 8000 (produção)
+#   - MySQL na porta 3308 (produção) / 3307 (homologação)
+#
+# Portainer: http://<IP_VPS>:9000
+#   User: admin | Senha padrão: QuickTrack@2026!
+# =============================================================
 
 services:
 
-  # 2. Broker de Mensagens Redis
+  # 1. Broker de Mensagens Redis
   redis:
     image: redis:7-alpine
     container_name: transportadora_redis
     restart: always
 
-  # 3. Backend Django/DRF (Servidor Web)
+  # 2. Backend Django/DRF (Servidor Web Principal)
+  # Porta interna 8000 conforme infraestrutura do cliente
+  # Nginx reverse proxy já está configurado para apontar aqui
   backend:
     build: .
     container_name: transportadora_backend
-    command: sh ./entrypoint.sh sh -c "python manage.py collectstatic --noinput && python manage.py migrate && python manage.py setup_private_admin && daphne -b 0.0.0.0 -p 8089 --application-close-timeout 60 core.asgi:application"
+    entrypoint: ["sh", "./entrypoint.sh"]
+    command: ["daphne", "-b", "0.0.0.0", "-p", "8000", "--application-close-timeout", "60", "core.asgi:application"]
     volumes:
       - .:/transportadora_backend
       - media_data:/transportadora_backend/media
     ports:
-      - "8089:8089"
+      - "8000:8000"
     env_file:
       - .env
+    environment:
+      - RUN_SETUP=true
+    extra_hosts:
+      # Permite o container acessar serviços do host (MySQL local na VPS)
+      - "host.docker.internal:host-gateway"
     depends_on:
       - redis
     restart: always
 
-  # 4. Worker do Celery (Tarefas Assíncronas)
+  # 3. Worker do Celery (Tarefas Assíncronas)
   celery_worker:
     build: .
     container_name: transportadora_celery_worker
-    command: sh ./entrypoint.sh celery -A core worker -l info
+    entrypoint: ["sh", "./entrypoint.sh"]
+    command: ["celery", "-A", "core", "worker", "-l", "info"]
     volumes:
       - .:/transportadora_backend
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - backend
       - redis
     restart: always
 
-
-  # 5. Agendador do Celery Beat (Tarefas Recorrentes)
+  # 4. Agendador do Celery Beat (Tarefas Recorrentes)
   celery_beat:
     build: .
     container_name: transportadora_celery_beat
-    command: sh ./entrypoint.sh celery -A core beat -l info --scheduler django_celery_beat.schedulers.DatabaseScheduler
+    entrypoint: ["sh", "./entrypoint.sh"]
+    command: ["celery", "-A", "core", "beat", "-l", "info", "--scheduler", "django_celery_beat.schedulers.DatabaseScheduler"]
     volumes:
       - .:/transportadora_backend
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - redis
     restart: always
 
-
-# 6. Worker Especializado para IA (YOLO + OCR)
+  # 5. Worker Especializado para IA (YOLO + OCR)
   celery_worker_ai:
     build: .
     container_name: transportadora_celery_ai
-    # Usamos uma fila específica (-Q ai_queue) e o pool 'solo' para evitar crashes (SIGILL) do PyTorch/OpenCV no Celery
-    command: sh ./entrypoint.sh celery -A core worker -l info -Q ai_queue --pool=solo --concurrency=1
+    entrypoint: ["sh", "./entrypoint.sh"]
+    # Fila específica (-Q ai_queue) com pool 'solo' para evitar crashes do PyTorch/OpenCV
+    command: ["celery", "-A", "core", "worker", "-l", "info", "-Q", "ai_queue", "--pool=solo", "--concurrency=1"]
     volumes:
       - .:/transportadora_backend
       - media_data:/transportadora_backend/media
@@ -70,11 +99,17 @@ services:
       - MKL_NUM_THREADS=1
       - VECLIB_MAXIMUM_THREADS=1
       - NUMEXPR_NUM_THREADS=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - redis
     restart: always
 
-  # 7. Painel de Gestão e Monitoramento do Docker (Portainer)
+  # 6. Painel de Gestão e Monitoramento do Docker (Portainer)
+  # ─────────────────────────────────────────────────────────
+  # Acesso: http://<IP_VPS>:9000
+  # User: admin | Senha padrão: QuickTrack@2026!
+  # A senha pode ser alterada dentro do painel a qualquer momento.
   portainer:
     image: portainer/portainer-ce:latest
     container_name: transportadora_portainer
@@ -84,6 +119,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
+    # Hash bcrypt da senha "QuickTrack@2026!" (gerado com rounds=10)
+    command: --admin-password '$$2b$$10$$dNxs1ay/04kVqPd8fPAEIuJ7KbI0c6x3rnRQmHKR4mJliTwtLwBQy'
 
 volumes:
   media_data:

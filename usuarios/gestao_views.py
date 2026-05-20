@@ -98,6 +98,7 @@ def api_listar_usuarios(request):
             'filial_id': m.filial_id,
             'filial_nome': m.filial.nome if m.filial else 'Sem filial',
             'tem_user': m.user is not None,
+            'is_sac_mobile': getattr(m, 'is_sac_mobile', False),
             'permissoes': perms,
         })
     
@@ -122,6 +123,7 @@ def api_criar_usuario(request):
     tipo_usuario = data.get('tipo_usuario', 'OPERACIONAL')
     cargo_novo = data.get('cargo', 'MEMBRO')
     filial_id = data.get('filial_id', perfil.filial_id)
+    is_sac_mobile = data.get('is_sac_mobile', False)
     
     if not nome or not cpf or len(cpf) != 11:
         return JsonResponse({'erro': 'Nome e CPF (11 digitos) sao obrigatorios'}, status=400)
@@ -149,6 +151,7 @@ def api_criar_usuario(request):
                 tipo_usuario=tipo_usuario,
                 cargo=cargo_novo,
                 filial_id=filial_id or perfil.filial_id,
+                is_sac_mobile=is_sac_mobile,
             )
             # Permissoes sao criadas automaticamente pelo signal
         
@@ -201,6 +204,9 @@ def api_editar_usuario(request, usuario_id):
     
     if 'nome' in data:
         alvo.nome_completo = data['nome']
+        
+    if 'is_sac_mobile' in data:
+        alvo.is_sac_mobile = bool(data['is_sac_mobile'])
     
     alvo.save()
     

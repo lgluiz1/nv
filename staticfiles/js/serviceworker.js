@@ -1,5 +1,5 @@
 // UNIFICADO: Versão v1.26 (Corrigida para evitar erro de Clone/POST)
-const CACHE_NAME = 'fluxo-logistica-v1.34';
+const CACHE_NAME = 'fluxo-logistica-v1.35';
 
 const filesToCache = [
     '/app/',
@@ -50,6 +50,17 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
+
+    // ⛔ REGRA 0: IGNORAR ROTAS DO PAINEL ADMINISTRATIVO E OPERACIONAL
+    if (
+        url.pathname.startsWith('/admin') ||
+        url.pathname.startsWith('/gestao') ||
+        url.pathname.startsWith('/suporte') ||
+        url.pathname.startsWith('/static/admin/') ||
+        url.pathname === '/'
+    ) {
+        return; // Retorna imediatamente e repassa nativamente para a rede
+    }
 
     // ⛔ REGRA 1: Ignora requisições de LOGIN ou envio de dados (POST, PUT, DELETE)
     // O Service Worker não deve tentar cachear o corpo de um POST.

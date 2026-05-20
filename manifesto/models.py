@@ -285,7 +285,19 @@ class BaixaNF(models.Model):
     recebedor = models.CharField(max_length=100, null=True, blank=True)
     documento_recebedor = models.CharField(max_length=20, null=True, blank=True)
     observacao = models.TextField(blank=True, null=True)
+    
+    # NOVO: Autor da baixa (usado especialmente quando um SAC altera ou registra a nota)
+    autor_baixa = models.ForeignKey('usuarios.Motorista', null=True, blank=True, on_delete=models.SET_NULL, related_name='baixas_realizadas', verbose_name="Autor da Baixa")
+    
     data_baixa = models.DateTimeField(default=timezone.now)
+    
+    MOTIVO_CHOICES = [
+        ('APP_ERROR', 'Erro de Aplicativo/Hardware'),
+        ('MOTORISTA_DESLEIXO', 'Não Finalizado pelo Motorista (Penalidade)'),
+        ('OPERACAO_NORMAL', 'Operação Normal (Motorista)'),
+    ]
+    motivo_baixa = models.CharField(max_length=50, choices=MOTIVO_CHOICES, default='OPERACAO_NORMAL', verbose_name="Motivo da Baixa (Auditoria)")
+    
     processado_tms = models.BooleanField(default=False, verbose_name="Integrado com ESL")
     data_integracao = models.DateTimeField(null=True, blank=True)
     log_erro_tms = models.TextField(null=True, blank=True, verbose_name="Log de Erro ESL")

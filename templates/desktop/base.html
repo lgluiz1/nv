@@ -117,6 +117,10 @@
             <i class="bi bi-layers"></i>
             <span class="menu-text">Manifestos</span>
         </a>
+        <a href="{% url 'auditoria:dashboard' %}" class="nav-link {% if '/auditoria/' in request.path %}active-menu{% endif %}">
+            <i class="bi bi-shield-check"></i>
+            <span class="menu-text">Auditoria de Processos</span>
+        </a>
         <a href="{% url 'operacional:motoristas' %}" class="nav-link {% if request.path == '/motoristas/' %}active-menu{% endif %}">
             <i class="bi bi-people"></i>
             <span class="menu-text">Motoristas</span>

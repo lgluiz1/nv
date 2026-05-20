@@ -121,7 +121,7 @@ def listar_manifestos_select(request):
     usuario_filial = getattr(request.user.userprofile, 'filial', None) if hasattr(request.user, 'userprofile') else None
     
     # Buscamos os últimos 50 manifestos para não sobrecarregar o select
-    qs = Manifesto.objects.exclude(status='CANCELADO').order_by('-data_criacao')
+    qs = Manifesto.objects.exclude(status='CANCELADO').exclude(numero_manifesto__startswith='SAC-').order_by('-data_criacao')
     
     if usuario_filial:
         qs = qs.filter(filial=usuario_filial)

@@ -43,19 +43,22 @@ def login_operacional_view(request):
             except Motorista.DoesNotExist:
                 return JsonResponse({'status': 'erro', 'message': 'CPF não registrado.'}, status=404)
 
-            # 1. Verifica se tem permissão para painéis Web
-            if perfil.tipo_usuario not in ['OPERACIONAL', 'SAC', 'GESTOR']:
-                return JsonResponse({'status': 'erro', 'message': 'Acesso restrito ao painel.'}, status=403)
+            # 1. Removida a restrição de acesso exclusivo do painel para a tela unificada
 
             # 2. Lógica de Verificação Inicial
+            # Identifica se é SAC para App ou SAC para Painel
+            tipo_retorno = perfil.tipo_usuario
+            if perfil.tipo_usuario == 'SAC' and getattr(perfil, 'is_sac_mobile', False):
+                tipo_retorno = 'SAC_MOBILE'
+            
             if acao == 'verificar':
                 if not perfil.user or not perfil.user.has_usable_password():
-                    return JsonResponse({'status': 'novo_usuario', 'nome': perfil.nome_completo})
+                    return JsonResponse({'status': 'novo_usuario', 'nome': perfil.nome_completo, 'tipo': tipo_retorno})
                 else:
-                    return JsonResponse({'status': 'usuario_registrado', 'nome': perfil.nome_completo})
+                    return JsonResponse({'status': 'usuario_registrado', 'nome': perfil.nome_completo, 'tipo': tipo_retorno})
 
-            # Definição do link baseado no cargo
-            url_destino = '/dashboard/'
+            # Definição do link baseado no cargo (Não usado mais para JWT motorista, mas mantido por segurança)
+            url_destino = '/dashboard/' if tipo_retorno in ['OPERACIONAL', 'SAC', 'GESTOR'] else '/app-sac/' if tipo_retorno == 'SAC_MOBILE' else '/app/'
 
             # 3. Lógica de Cadastro de Senha
             if acao == 'cadastrar':
@@ -122,7 +125,7 @@ class DashboardView(TemplateView):
 
         # --- 1. CARDS DE RESUMO ---
         # 1. Busca os manifestos do dia
-        manifestos_do_dia = Manifesto.objects.filter(data_criacao__range=(hoje_inicio, hoje_fim))
+        manifestos_do_dia = Manifesto.objects.filter(data_criacao__range=(hoje_inicio, hoje_fim)).exclude(numero_manifesto__startswith='SAC-')
         
         # 2. Aplica filtro de Filial (Prioridade: URL param -> Perfil do Usuário -> Todas)
         if filial_param == 'todas':
@@ -352,7 +355,7 @@ class ManifestosMonitoramentoView(ListView):
                 pass
 
         # Otimização: traz motorista e conta as notas em uma única query
-        queryset = Manifesto.objects.select_related('motorista', 'filial').annotate(
+        queryset = Manifesto.objects.select_related('motorista', 'filial').exclude(numero_manifesto__startswith='SAC-').annotate(
             total_notas=Count('notas_fiscais'),
             notas_concluidas=Count(
                 'notas_fiscais', 
