@@ -71,7 +71,7 @@ self.addEventListener('push', function (event) {
 
     event.waitUntil(
         self.registration.showNotification(
-            data.title || 'Transportadora App',
+            data.title || 'Quick Track',
             options
         )
     );

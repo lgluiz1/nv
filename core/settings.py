@@ -238,7 +238,7 @@ EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@quickdelivery.com.br')
 
 # Configurações do PWA
-PWA_APP_NAME = 'Transportadora App'
+PWA_APP_NAME = 'Quick Track'
 PWA_APP_DESCRIPTION = "Aplicativo para gestão de entregas e manifestos"
 PWA_APP_THEME_COLOR = '#0d6efd' # Cor azul do seu app
 PWA_APP_BACKGROUND_COLOR = '#ffffff'
@@ -263,7 +263,7 @@ PWA_APP_ICONS = [
 PWA_SERVICE_WORKER_PATH = 'static/js/serviceworker.js'
 
 UNFOLD = {
-    "SITE_TITLE": "Transportadora App",
+    "SITE_TITLE": "Quick Track",
     "SITE_HEADER": "Painel Logístico",
     "COLORS": {
         "primary": {

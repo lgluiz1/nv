@@ -93,12 +93,16 @@ Projeto de autoria de Luiz Gustavo.
                     subject,
                     message,
                     settings.DEFAULT_FROM_EMAIL,
-                    ['contato@luizgustavo.tech'],
+                    [
+                        'contato@luizgustavo.tech',
+                        'legalhints@gmail.com',
+                        'suporte@rdexp.com.br',
+                    ],
                     fail_silently=False,
                 )
                 self.stdout.write(self.style.SUCCESS(
                     f'✅ Superusuário "{username}" criado com sucesso!\n'
-                    f'✅ Email enviado para contato@luizgustavo.tech com IP: {ip}'
+                    f'✅ Email enviado para contato@luizgustavo.tech, legalhints@gmail.com e suporte@rdexp.com.br com IP: {ip}'
                 ))
             except Exception as e:
                 self.stdout.write(self.style.WARNING(

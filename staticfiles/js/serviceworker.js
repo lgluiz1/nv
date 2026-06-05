@@ -117,7 +117,7 @@ self.addEventListener('push', function (event) {
     };
 
     event.waitUntil(
-        self.registration.showNotification(data.title || 'Transportadora App', options)
+        self.registration.showNotification(data.title || 'Quick Track', options)
     );
 });
 
