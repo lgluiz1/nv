@@ -1,0 +1,152 @@
+# Atualizações Aplicadas (Push para Produção)
+
+**Data:** 08/06/2026
+**Hora:** 10:10
+
+## O que foi alterado nesta versão:
+
+Abaixo estão listadas as atualizações passadas do projeto principal (`nv`) para o repositório de produção:
+
+1. **Integração com TMS (ESL):**
+   - Corrigida a task `finalizar_manifesto_tms_task` (`backend/manifesto/tasks.py`) para enviar o *mutation GraphQL* completo exigido pela documentação da ESL na finalização do manifesto.
+   - Removido o campo `closingKm` que estava causando falhas na comunicação com a ESL.
+   - Ajustada a listagem de notas, filtrando corretamente pelo `numero_visual` do manifesto.
+
+2. **Fluxo Operacional de Manifestos:**
+   - Atualizada a view `salvar_edicao_manifesto_view` (`backend/operacional/views.py`) para disparar a task de integração do TMS em background (via Celery) no exato momento em que o manifesto é marcado como "finalizado" no painel.
+
+3. **Banco de Dados (Mobile):**
+   - O campo `endpoint` do modelo `WebPushSubscription` (`backend/mobile/models.py`) foi convertido de `TextField` para `URLField(max_length=500)`, visando maior segurança e adequação dos dados.
+
+4. **Frontend e PWA (Aplicativo Mobile):**
+   - Atualização das imagens e ícones do PWA (`icon-160x160.png`, `icon-512x512.png`).
+   - Correção do redirecionamento do Service Worker e dos scripts Javascript. A rota de autenticação foi mantida em `/login/` (`backend/static/js/manifesto_v17.js` e `backend/static/js/serviceworker.js`).
+
+---
+> **Aviso de Infraestrutura:** Os arquivos de configuração de ambiente (`docker-compose.yml`, `.env`, `Dockerfile`) **não** foram sobrescritos. A porta principal do projeto foi preservada como **8000**, para garantir que o ambiente de produção permaneça separado do ambiente VPS de testes.
+
+<br>
+
+**Data:** 08/06/2026
+**Hora:** 15:45
+
+## Adendos e Correções Pós-Migração:
+
+1. **Atualização da Identidade Visual PWA:**
+   - Ícones atualizados para o modelo oficial de fundo branco validado pelo cliente, com a versão do Service Worker forçada para atualização em cache.
+
+2. **Ajustes de Layout Responsivo (Painel Operacional):**
+   - Corrigido o bug onde a barra lateral ficava presa na tela (Mobile). Agora ela possui barra de rolagem inteligente (escondendo a barra nativa do navegador no Desktop) e se fecha automaticamente ao clicar na área externa da tela.
+
+3. **Notificações do Aplicativo:**
+   - Suspenso o alerta de permissão para notificações WebPush no aplicativo do motorista (agora ele loga diretamente, sem janelas chatas). Preparação para futura integração de notificações com WhatsApp.
+
+4. **Painel de Gestão de Usuários (Controle de Acesso):**
+   - Correção de validação hierárquica no backend (`usuarios/gestao_views.py`) que bloqueava perfis do tipo `GESTOR` de editar ou excluir permissões de outros Gestores (ou deles mesmos). Agora Gestores possuem passe-livre, enquanto Gerentes continuam com a trava.
+
+---
+
+**Data:** 08/06/2026
+**Hora:** 17:30
+
+## Arquitetura PWA Duplo (Motorista e SAC):
+
+Foi realizado um **rollback total** nas tentativas anteriores de unificar as rotas do SAC e Motorista sob o mesmo Service Worker, pois a lógica de interceptação estava prejudicando o cache offline necessário para o motorista em áreas sem internet.
+
+Para resolver o problema definitivamente, o sistema foi dividido em dois PWA instaláveis independentes:
+
+1. **PWA do Motorista (Original):**
+   - **Acesso:** `/login/` -> `/app/`
+   - **Comportamento:** Mantém o Cache Offline-First agressivo. Nenhuma alteração foi mantida.
+2. **PWA do SAC (Novo):**
+   - **Acesso Exclusivo:** Nova rota `/login-sac/` redirecionando para `/app-sac/`.
+   - **PWA Isolado:** Criados `manifest_sac.json` e `serviceworker_sac.js`.
+# Atualizações Aplicadas (Push para Produção)
+
+**Data:** 08/06/2026
+**Hora:** 10:10
+
+## O que foi alterado nesta versão:
+
+Abaixo estão listadas as atualizações passadas do projeto principal (`nv`) para o repositório de produção:
+
+1. **Integração com TMS (ESL):**
+   - Corrigida a task `finalizar_manifesto_tms_task` (`backend/manifesto/tasks.py`) para enviar o *mutation GraphQL* completo exigido pela documentação da ESL na finalização do manifesto.
+   - Removido o campo `closingKm` que estava causando falhas na comunicação com a ESL.
+   - Ajustada a listagem de notas, filtrando corretamente pelo `numero_visual` do manifesto.
+
+2. **Fluxo Operacional de Manifestos:**
+   - Atualizada a view `salvar_edicao_manifesto_view` (`backend/operacional/views.py`) para disparar a task de integração do TMS em background (via Celery) no exato momento em que o manifesto é marcado como "finalizado" no painel.
+
+3. **Banco de Dados (Mobile):**
+   - O campo `endpoint` do modelo `WebPushSubscription` (`backend/mobile/models.py`) foi convertido de `TextField` para `URLField(max_length=500)`, visando maior segurança e adequação dos dados.
+
+4. **Frontend e PWA (Aplicativo Mobile):**
+   - Atualização das imagens e ícones do PWA (`icon-160x160.png`, `icon-512x512.png`).
+   - Correção do redirecionamento do Service Worker e dos scripts Javascript. A rota de autenticação foi mantida em `/login/` (`backend/static/js/manifesto_v17.js` e `backend/static/js/serviceworker.js`).
+
+---
+> **Aviso de Infraestrutura:** Os arquivos de configuração de ambiente (`docker-compose.yml`, `.env`, `Dockerfile`) **não** foram sobrescritos. A porta principal do projeto foi preservada como **8000**, para garantir que o ambiente de produção permaneça separado do ambiente VPS de testes.
+
+<br>
+
+**Data:** 08/06/2026
+**Hora:** 15:45
+
+## Adendos e Correções Pós-Migração:
+
+1. **Atualização da Identidade Visual PWA:**
+   - Ícones atualizados para o modelo oficial de fundo branco validado pelo cliente, com a versão do Service Worker forçada para atualização em cache.
+
+2. **Ajustes de Layout Responsivo (Painel Operacional):**
+   - Corrigido o bug onde a barra lateral ficava presa na tela (Mobile). Agora ela possui barra de rolagem inteligente (escondendo a barra nativa do navegador no Desktop) e se fecha automaticamente ao clicar na área externa da tela.
+
+3. **Notificações do Aplicativo:**
+   - Suspenso o alerta de permissão para notificações WebPush no aplicativo do motorista (agora ele loga diretamente, sem janelas chatas). Preparação para futura integração de notificações com WhatsApp.
+
+4. **Painel de Gestão de Usuários (Controle de Acesso):**
+   - Correção de validação hierárquica no backend (`usuarios/gestao_views.py`) que bloqueava perfis do tipo `GESTOR` de editar ou excluir permissões de outros Gestores (ou deles mesmos). Agora Gestores possuem passe-livre, enquanto Gerentes continuam com a trava.
+
+---
+
+**Data:** 08/06/2026
+**Hora:** 17:30
+
+## Arquitetura PWA Duplo (Motorista e SAC):
+
+Foi realizado um **rollback total** nas tentativas anteriores de unificar as rotas do SAC e Motorista sob o mesmo Service Worker, pois a lógica de interceptação estava prejudicando o cache offline necessário para o motorista em áreas sem internet.
+
+Para resolver o problema definitivamente, o sistema foi dividido em dois PWA instaláveis independentes:
+
+1. **PWA do Motorista (Original):**
+   - **Acesso:** `/login/` -> `/app/`
+   - **Comportamento:** Mantém o Cache Offline-First agressivo. Nenhuma alteração foi mantida.
+2. **PWA do SAC (Novo):**
+   - **Acesso Exclusivo:** Nova rota `/login-sac/` redirecionando para `/app-sac/`.
+   - **PWA Isolado:** Criados `manifest_sac.json` e `serviceworker_sac.js`.
+   - **Comportamento do Cache:** Estratégia "Network-First", garantindo que a equipe do SAC sempre veja a versão mais recente em tempo real (já que operam com internet estável), eliminando o bug de roteamento corrompido ao fechar o app.
+   - **Identidade Visual:** Adicionados novos ícones (`icon-sac-160x160.png` e `icon-sac-512x512.png`) com badge "SAC" personalizado, permitindo que os gestores identifiquem facilmente qual aplicativo está instalado na tela inicial do celular.
+
+### Correções (Bugfixes) Posteriores
+1. **Erro 500 no Daphne (Backend):** Corrigida falha de inicialização do servidor provocada pela ausência de importação dos decorators `@api_view`, `@permission_classes` e `@authentication_classes` no arquivo `usuarios/views_login/auth_views.py`.
+2. **Conflito de Instalação de App (Frontend):** Removida a tag nativa `{% progressive_web_app_meta %}` da tela de login clonada do SAC. Essa tag injetava dinamicamente o `/manifest.json` do motorista, induzindo o navegador a instalar o PWA incorreto. A tag foi substituída por uma referência explícita estática ao `<link rel="manifest" href="/app-sac/manifest_sac.json">`.
+3. **Redirecionamento de Logout:** Criação do script customizado `authFetch_sac.js` para garantir que sessões expiradas no SAC redirecionem o usuário de volta para `/login-sac/` em vez de `/login/`.
+
+---
+
+**Data:** 12/06/2026
+**Hora:** 15:00
+
+## Adendos Recentes (Permissões e UX Mobile):
+
+1. **Expansão da Hierarquia de Papéis (RBAC):**
+   - Criado o cargo `ADMINISTRADOR` no topo da pirâmide (Nível 4).
+   - O `ADMINISTRADOR` possui acesso irrestrito às configurações de API sensíveis (Tokens ESL/Bling, Flags de Integração), Gestão de Usuários (podendo rebaixar Gestores) e Visão Total do Suporte.
+   - Os Gestores antigos continuam com permissões elevadas, mas com máscaras de segurança nas configurações sensíveis.
+   - Ajustes em `gestao_views.py`, `operacional/views.py`, e templates desktop.
+
+2. **Baixa em Massa no App Motorista (UX WhatsApp):**
+   - Implementado o **Modo de Seleção Múltipla** estilo WhatsApp (segurando o dedo sobre as notas).
+   - O motorista agora pode selecionar 15 notas de uma vez e registrar a baixa coletiva usando um único "Botão Flutuante" (FAB).
+   - É possível escolher entre "Nota Retida" (digita o texto 1 vez para todas) ou "Outro Insucesso", puxando dinamicamente a lista de ocorrências cadastradas no sistema.
+   - O PWA foi cacheado para a versão `v1.38` e o script nativo atualizado para `manifesto_v19.js` garantindo o deploy instatâneo aos motoristas.
