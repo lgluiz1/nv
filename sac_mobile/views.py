@@ -2,6 +2,7 @@
 # Views e APIs do App SAC Mobile (Arquitetura Sem Banco Local)
 
 from django.shortcuts import render
+from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -23,6 +24,26 @@ def app_view(request):
     """Renderiza a página principal do App SAC."""
     ocorrencias = Ocorrencia.objects.all().order_by('codigo_tms')
     return render(request, 'aplicativo/sac/index.html', {'ocorrencias': ocorrencias})
+
+def serve_manifest_sac(request):
+    import os
+    from django.conf import settings
+    file_path = os.path.join(settings.BASE_DIR, 'static', 'json', 'manifest_sac.json')
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return HttpResponse(f.read(), content_type="application/json")
+    except FileNotFoundError:
+        return HttpResponse('{}', content_type="application/json")
+
+def serve_sw_sac(request):
+    import os
+    from django.conf import settings
+    file_path = os.path.join(settings.BASE_DIR, 'static', 'js', 'serviceworker_sac.js')
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return HttpResponse(f.read(), content_type="application/javascript")
+    except FileNotFoundError:
+        return HttpResponse('', content_type="application/javascript")
 
 
 def _classificar_termo(termo):
@@ -561,7 +582,7 @@ def api_registrar_baixa_auditoria_sac(request):
     """
     Registra baixa manual pelo app SAC com motivo de auditoria.
     """
-    from manifesto.tasks import enviar_baixa_esl_task
+    from manifesto.tasks import enviar_baixa_esl_task, enviar_baixa_minuta_task
     from manifesto.rotas.baixa import upload_via_ftp
     
     try:
@@ -606,7 +627,10 @@ def api_registrar_baixa_auditoria_sac(request):
             from configuracao.utils import get_config
             config = get_config()
             if config.enviar_tms:
-                enviar_baixa_esl_task.delay(baixa.id)
+                if nf.chave_acesso:
+                    enviar_baixa_esl_task.delay(baixa.id)
+                else:
+                    enviar_baixa_minuta_task.delay(baixa.id)
             
             return Response({
                 "status": "sucesso",
