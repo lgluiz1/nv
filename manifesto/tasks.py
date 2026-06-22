@@ -13,6 +13,19 @@ import time # Necessário para respeitar os 2 segundos
 
 
 logger = logging.getLogger(__name__)
+
+
+def limpar_codigo_ocorrencia(codigo):
+    """Remove zeros à esquerda do código de ocorrência para a ESL (ex: 098 -> 98, 050 -> 50)."""
+    if not codigo:
+        return "1"
+    codigo_str = str(codigo).strip()
+    try:
+        return str(int(codigo_str))
+    except ValueError:
+        limpo = codigo_str.lstrip('0')
+        return limpo if limpo else "0"
+
 # Configurações centralizadas
 MAPA_JSON = {
     'CPF_MOTORISTA_TMS': 'mft_mft_driver_document_number',
@@ -491,7 +504,7 @@ def enviar_baixa_esl_task(self, baixa_id):
         manifesto = nf.manifesto
         motorista = manifesto.motorista.nome_completo if manifesto.motorista else "Motorista não identificado"
         url_foto = baixa.comprovante_foto_url or ""
-        codigo_ocorrencia = int(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else 1
+        codigo_ocorrencia = limpar_codigo_ocorrencia(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else "1"
 
         # ID Interno do TMS que você salvou na busca
         tms_manifest_id = manifesto.numero_manifesto 
@@ -506,7 +519,7 @@ def enviar_baixa_esl_task(self, baixa_id):
         data_ocorrencia_str = data_br.strftime('%Y-%m-%dT%H:%M:%S.000-03:00')
 
         # --- LÓGICA DE FOTOS (Invoice vs Freight) - MANTIDA ORIGINAL ---
-        if codigo_ocorrencia in [1, 2]:
+        if codigo_ocorrencia in ["1", "2", 1, 2]:
             invoice_data = {
                 "key": nf.chave_acesso,
                 "delivery_receipt_url": url_foto
@@ -726,7 +739,7 @@ def enviar_baixa_minuta_task(self, baixa_id):
                 "latitude": float(baixa.latitude) if baixa.latitude else None,
                 "longitude": float(baixa.longitude) if baixa.longitude else None,
                 "occurrence": {
-                    "code": int(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else 1
+                    "code": limpar_codigo_ocorrencia(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else "1"
                 }
             }
         }
@@ -1022,7 +1035,7 @@ def enviar_coleta_esl_task(self, baixa_id):
                     "latitude": float(baixa.latitude) if baixa.latitude else 0.0,
                     "longitude": float(baixa.longitude) if baixa.longitude else 0.0,
                     "occurrence": {
-                        "code": int(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else 1
+                        "code": limpar_codigo_ocorrencia(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else "1"
                     }
                 }
             }
@@ -1034,7 +1047,7 @@ def enviar_coleta_esl_task(self, baixa_id):
                 "invoice_occurrence": {
                     "occurrence_at": data_iso_v2,
                     "occurrence": {
-                        "code": int(baixa.ocorrencia.codigo_tms)
+                        "code": limpar_codigo_ocorrencia(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else "1"
                     },
                     "invoice": {
                         "number": identificador
