@@ -748,7 +748,7 @@ def enviar_baixa_minuta_task(self, baixa_id):
     from configuracao.utils import get_config
     config = get_config()
     TOKEN = config.token_invoices
-    
+    payload = None
     try:
         # Busca a baixa e a nota relacionada
         baixa = BaixaNF.objects.select_related(
@@ -819,6 +819,7 @@ def enviar_baixa_minuta_task(self, baixa_id):
         }
         
         logger.info(f"Enviando Minuta {nf.numero_nota} via Freight V1 (ID: {freight_id})")
+        logger.info(f"Payload: {json.dumps(payload)}")
         response = requests.post(URL_ESL_FRETE, json=payload, headers=headers, timeout=30)
         response.raise_for_status()
 
@@ -831,9 +832,10 @@ def enviar_baixa_minuta_task(self, baixa_id):
         return f"Baixa de Minuta {nf.numero_nota} enviada com sucesso (Freight: {freight_id})."
 
     except Exception as e:
-        msg_falha = f"Erro na integração da Minuta: {str(e)}"
+        payload_str = f" | Payload: {json.dumps(payload)}" if payload else ""
+        msg_falha = f"Erro na integração da Minuta: {str(e)}{payload_str}"
         if hasattr(e, 'response') and e.response is not None:
-            msg_falha = f"Erro na integração da Minuta ({e.response.status_code}): {e.response.text}"
+            msg_falha = f"Erro na integração da Minuta ({e.response.status_code}): {e.response.text}{payload_str}"
         baixa.log_erro_tms = msg_falha[:500]
         baixa.integrado_tms = False
         baixa.save()
