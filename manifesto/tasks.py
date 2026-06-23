@@ -510,7 +510,9 @@ def enviar_baixa_esl_task(self, baixa_id):
         manifesto = nf.manifesto
         motorista = manifesto.motorista.nome_completo if manifesto.motorista else "Motorista não identificado"
         url_foto = baixa.comprovante_foto_url or ""
-        codigo_ocorrencia = limpar_codigo_ocorrencia(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else "1"
+        
+        codigo_tms_val = (baixa.ocorrencia.codigo_tms or baixa.ocorrencia.codigo_referencia) if baixa.ocorrencia else None
+        codigo_ocorrencia = limpar_codigo_ocorrencia(codigo_tms_val) if codigo_tms_val else 1
 
         # ID Interno do TMS que você salvou na busca
         tms_manifest_id = manifesto.numero_manifesto 
@@ -525,7 +527,7 @@ def enviar_baixa_esl_task(self, baixa_id):
         data_ocorrencia_str = data_br.strftime('%Y-%m-%dT%H:%M:%S.000-03:00')
 
         # --- LÓGICA DE FOTOS (Invoice vs Freight) - MANTIDA ORIGINAL ---
-        if codigo_ocorrencia in ["1", "2", 1, 2]:
+        if codigo_ocorrencia in [1, 2]:
             invoice_data = {
                 "key": nf.chave_acesso,
                 "delivery_receipt_url": url_foto
@@ -758,7 +760,9 @@ def enviar_baixa_minuta_task(self, baixa_id):
         nf = baixa.nota_fiscal
         freight_id = nf.freight_id_tms
         manifesto = nf.manifesto
-        codigo_ocorrencia = limpar_codigo_ocorrencia(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else 1
+        
+        codigo_tms_val = (baixa.ocorrencia.codigo_tms or baixa.ocorrencia.codigo_referencia) if baixa.ocorrencia else None
+        codigo_ocorrencia = limpar_codigo_ocorrencia(codigo_tms_val) if codigo_tms_val else 1
         
         fuso_br = pytz.timezone('America/Sao_Paulo')
         data_ocorrencia_str = baixa.data_baixa.astimezone(fuso_br).strftime('%Y-%m-%dT%H:%M:%S.000-03:00')
@@ -1072,6 +1076,9 @@ def enviar_coleta_esl_task(self, baixa_id):
         # 2. LÓGICA DE ROTEAMENTO (V1 vs V2)
         is_numeric = identificador.isdigit()
         
+        codigo_tms_val = (baixa.ocorrencia.codigo_tms or baixa.ocorrencia.codigo_referencia) if baixa.ocorrencia else None
+        codigo_ocorrencia = limpar_codigo_ocorrencia(codigo_tms_val) if codigo_tms_val else 1
+        
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {TOKEN}"
@@ -1089,7 +1096,7 @@ def enviar_coleta_esl_task(self, baixa_id):
                     "latitude": float(baixa.latitude) if baixa.latitude else 0.0,
                     "longitude": float(baixa.longitude) if baixa.longitude else 0.0,
                     "occurrence": {
-                        "code": limpar_codigo_ocorrencia(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else "1"
+                        "code": codigo_ocorrencia
                     }
                 }
             }
@@ -1101,7 +1108,7 @@ def enviar_coleta_esl_task(self, baixa_id):
                 "invoice_occurrence": {
                     "occurrence_at": data_iso_v2,
                     "occurrence": {
-                        "code": limpar_codigo_ocorrencia(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else "1"
+                        "code": codigo_ocorrencia
                     },
                     "invoice": {
                         "number": identificador
