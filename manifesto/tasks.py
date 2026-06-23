@@ -535,7 +535,10 @@ def enviar_baixa_esl_task(self, baixa_id):
                 "delivery_receipt_url": ""
             }
             freight_data = {
-                "delivery_receipt_url": url_foto
+                "delivery_receipt_url": url_foto,
+                "occurrence": {
+                    "code": codigo_ocorrencia
+                }
             } if url_foto else {}
 
         # --- NOVA INFORMAÇÃO: COMENTÁRIO COM OBSERVAÇÃO ---
@@ -777,7 +780,10 @@ def enviar_baixa_minuta_task(self, baixa_id):
                     "delivery_receipt_url": ""
                 }
                 freight_data = {
-                    "delivery_receipt_url": url_foto
+                    "delivery_receipt_url": url_foto,
+                    "occurrence": {
+                        "code": codigo_ocorrencia
+                    }
                 } if url_foto else {}
 
             prefixo_retida = "[NOTA RETIDA] " if not url_foto and codigo_ocorrencia in [1, 2] else ""
