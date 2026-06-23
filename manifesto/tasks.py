@@ -758,7 +758,7 @@ def enviar_baixa_minuta_task(self, baixa_id):
         nf = baixa.nota_fiscal
         freight_id = nf.freight_id_tms
         manifesto = nf.manifesto
-        codigo_ocorrencia = limpar_codigo_ocorrencia(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else "1"
+        codigo_ocorrencia = limpar_codigo_ocorrencia(baixa.ocorrencia.codigo_tms) if baixa.ocorrencia else 1
         
         fuso_br = pytz.timezone('America/Sao_Paulo')
         data_ocorrencia_str = baixa.data_baixa.astimezone(fuso_br).strftime('%Y-%m-%dT%H:%M:%S.000-03:00')
@@ -801,21 +801,13 @@ def enviar_baixa_minuta_task(self, baixa_id):
                 "longitude": float(baixa.longitude) if baixa.longitude else None,
                 "occurrence": {
                     "code": codigo_ocorrencia
-                },
-                "freight": {
-                    "occurrence": {
-                        "code": codigo_ocorrencia
-                    }
                 }
             }
         }
         
-        # Foto: entrega (1,2) vai no invoice_occurrence, demais vai no freight
+        # Adiciona foto
         if url_foto:
-            if codigo_ocorrencia in ["1", "2"]:
-                payload["invoice_occurrence"]["delivery_receipt_url"] = url_foto
-            else:
-                payload["invoice_occurrence"]["freight"]["delivery_receipt_url"] = url_foto
+            payload["invoice_occurrence"]["delivery_receipt_url"] = url_foto
         
         headers = {
             "Content-Type": "application/json",
