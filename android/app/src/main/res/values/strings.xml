@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">QuickTrack</string>
+    <string name="title_activity_main">QuickTrack</string>
+    <string name="package_name">com.quicktrack.motorista</string>
+    <string name="custom_url_scheme">com.quicktrack.motorista</string>
+</resources>

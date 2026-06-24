@@ -1,0 +1,19 @@
+{
+  "appId": "com.quicktrack.motorista",
+  "appName": "QuickTrack",
+  "webDir": "APK_PWA",
+  "server": {
+    "allowNavigation": [
+      "*.quicktrack.com.br"
+    ]
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  },
+  "android": {
+    "allowMixedContent": true,
+    "overScrollEnabled": true
+  }
+}

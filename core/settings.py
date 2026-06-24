@@ -289,5 +289,6 @@ if not DEBUG: # Ou remova o 'if' se quiser testar no ngrok agora
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
-
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+SESSION_COOKIE_AGE = 1209600 * 2  # 4 weeks of session cookie age
 WHITENOISE_MANIFEST_STRICT = False

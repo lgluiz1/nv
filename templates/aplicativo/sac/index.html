@@ -3,15 +3,18 @@
 <html lang="pt-BR">
 
 <head>
+    <script src="/capacitor.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="apple-touch-icon" href="/static/images/icon-160x160.png">
+    <meta name="theme-color" content="#0d6efd">
+    <link rel="manifest" href="/app-sac/manifest_sac.json">
+    <link rel="apple-touch-icon" href="/static/images/icon-sac-160x160.png">
     <title>App SAC - Gestão de Notas</title>
     <link href="{% static 'css/bootstrap.min.css' %}" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/bootstrap-icons.css' %}">
     <script src="{% static 'js/bootstrap.bundle.min.js' %}"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <script src="{% static 'js/login_motorista/authFetch.js' %}"></script>
+    <script src="{% static 'js/authFetch_sac.js' %}"></script>
     <style>
         * { box-sizing: border-box; }
         body { background-color: #f0f2f5; padding-bottom: 70px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
@@ -55,6 +58,19 @@
 </head>
 
 <body>
+    <!-- Banner de Instalação do App (Oculto por padrão) -->
+    <div id="pwa-install-banner" class="container mt-2 px-3" style="display: none; z-index: 1050; position: relative;">
+        <div class="alert alert-primary d-flex justify-content-between align-items-center shadow-sm border-0 mb-2" style="border-radius: 12px;">
+            <div>
+                <span class="fw-bold d-block text-primary"><i class="bi bi-download"></i> Instalar SAC Mobile</span>
+                <small class="text-muted">Instale para ter acesso rápido na tela inicial.</small>
+            </div>
+            <button id="btn-instalar-app" class="btn btn-primary btn-sm px-3 rounded-pill">
+                Instalar
+            </button>
+        </div>
+    </div>
+
     <!-- Header -->
     <div class="header-sac">
         <div class="d-flex justify-content-between align-items-center">
@@ -531,6 +547,51 @@
                 showFeedback(false, "Erro no Envio", data.error || "Não foi possível registrar a ocorrência.");
             }
         }
+    </script>
+    <script>
+        // Registro do Service Worker Exclusivo para o SAC
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/app-sac/serviceworker_sac.js')
+                    .then(registration => {
+                        console.log('✅ ServiceWorker SAC Registrado com sucesso:', registration.scope);
+                    })
+                    .catch(err => {
+                        console.log('❌ Falha ao registrar ServiceWorker SAC:', err);
+                    });
+            });
+        }
+
+        // Lógica de Instalação do PWA SAC
+        let deferredPromptSAC;
+        const installBannerSAC = document.getElementById('pwa-install-banner');
+        const installBtnSAC = document.getElementById('btn-instalar-app');
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            // Apenas exibe em dispositivos móveis
+            if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+                deferredPromptSAC = e;
+                installBannerSAC.style.display = 'block';
+            }
+        });
+
+        installBtnSAC.addEventListener('click', async () => {
+            if (deferredPromptSAC) {
+                deferredPromptSAC.prompt();
+                const { outcome } = await deferredPromptSAC.userChoice;
+                if (outcome === 'accepted') {
+                    installBannerSAC.style.display = 'none';
+                }
+                deferredPromptSAC = null;
+            }
+        });
+
+        window.addEventListener('appinstalled', () => {
+            installBannerSAC.style.display = 'none';
+            deferredPromptSAC = null;
+        });
+
     </script>
 </body>
 </html>
