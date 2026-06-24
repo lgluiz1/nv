@@ -1,4 +1,4 @@
-// authFetch.js
+// authFetch_sac.js
 
 // Pega o domínio atual (ex: http://localhost:8089 ou https://pwa.suaempresa.com)
 const BASE_URL = window.location.origin;
@@ -160,8 +160,8 @@ async function refreshToken() {
 function logout() {
     localStorage.clear();
     clearTokenCookies(); // Limpa cookies de backup também
-    if (!window.location.pathname.includes('/login/')) {
-        window.location.href = '/login/';
+    if (!window.location.pathname.includes('/login-sac/')) {
+        window.location.href = '/login-sac/';
     }
 }
 

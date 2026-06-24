@@ -127,13 +127,13 @@ form.addEventListener('submit', async (e) => {
             // 🔐 TOKENS: Salva tanto o de acesso quanto o de renovação
             localStorage.setItem('accessToken', data.access);
             localStorage.setItem('refreshToken', data.refresh);
-            // 🔒 Backup em cookies para APK (WebView perde localStorage ao fechar)
+            // 🔒 Backup em cookies para APK
             salvarTokensEmCookies(data.access, data.refresh);
 
             // 🔥 BUSCA MOTORISTA
             await carregarMotorista(data.access);
 
-            window.location.href = '/app/';
+            window.location.href = '/app-sac/';
         }
 
         // ETAPA 3 — PRIMEIRO ACESSO (CRIAÇÃO DE SENHA)
@@ -155,7 +155,7 @@ form.addEventListener('submit', async (e) => {
             // 🔐 TOKENS: Salva tanto o de acesso quanto o de renovação
             localStorage.setItem('accessToken', data.access);
             localStorage.setItem('refreshToken', data.refresh);
-            // 🔒 Backup em cookies para APK (WebView perde localStorage ao fechar)
+            // 🔒 Backup em cookies para APK
             salvarTokensEmCookies(data.access, data.refresh);
 
             // 🔥 BUSCA MOTORISTA
@@ -171,7 +171,7 @@ form.addEventListener('submit', async (e) => {
             localStorage.setItem('motorista_id', me.id);
             setTokenCookie('qt_motorista_id', me.id, 365);
 
-            window.location.href = '/app/';
+            window.location.href = '/app-sac/';
         }
 
     } catch (err) {
@@ -216,7 +216,7 @@ window.addEventListener('appinstalled', () => {
 
 // Verifique se o Service Worker foi registrado com sucesso
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/serviceworker.js', { scope: '/app/' }) // Restringe o escopo à pasta do App
-    .then(() => console.log("PWA: Service Worker Registrado no escopo /app/!"))
-    .catch((err) => console.log("PWA: Falha no Service Worker", err));
+    navigator.serviceWorker.register('/app-sac/serviceworker_sac.js', { scope: '/app-sac/' }) 
+    .then(() => console.log("PWA SAC: Service Worker Registrado no escopo /app-sac/!"))
+    .catch((err) => console.log("PWA SAC: Falha no Service Worker", err));
 }
