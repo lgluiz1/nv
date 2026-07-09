@@ -71,6 +71,16 @@ public class QuickTrackLocationService extends Service {
         return START_STICKY; // Mantém o serviço imortal no Android
     }
 
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+        // Quando o usuário arrasta o app para fechar (mata o processo 100%)
+        Log.d(TAG, "App removido dos recentes. Parando GPS.");
+        stopTracking();
+        stopForeground(true);
+        stopSelf();
+    }
+
     private void startForegroundService() {
         String channelId = "quicktrack_gps_channel";
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -133,7 +143,11 @@ public class QuickTrackLocationService extends Service {
         
         new Thread(() -> {
             try {
-                URL url = new URL(baseUrl + "/manifesto/app/tracking-heartbeat/");
+                String urlString = baseUrl;
+            if (urlString != null && urlString.endsWith("/")) {
+                urlString = urlString.substring(0, urlString.length() - 1);
+            }
+            URL url = new URL(urlString + "/api/manifesto/app/tracking-heartbeat/");
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
