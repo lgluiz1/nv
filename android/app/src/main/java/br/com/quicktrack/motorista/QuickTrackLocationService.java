@@ -21,6 +21,11 @@ import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import android.content.IntentFilter;
+import android.os.BatteryManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.net.NetworkCapabilities;
 
 public class QuickTrackLocationService extends Service {
     private static final String TAG = "QuickTrackGPS";
@@ -154,7 +159,56 @@ public class QuickTrackLocationService extends Service {
                 conn.setDoOutput(true);
                 
                 long timestamp = System.currentTimeMillis();
+                
+                // Ler nível da bateria
+                int batteryPct = -1;
+                Intent batteryStatus = getApplicationContext().registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+                if (batteryStatus != null) {
+                    int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                    int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+                    if (level >= 0 && scale > 0) {
+                        batteryPct = (int) ((level / (float) scale) * 100);
+                    }
+                }
+                
+                // Ler status da rede
+                String networkType = "OFFLINE";
+                try {
+                    ConnectivityManager cm = (ConnectivityManager) getApplicationContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+                    if (cm != null) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            android.net.Network network = cm.getActiveNetwork();
+                            if (network != null) {
+                                NetworkCapabilities capabilities = cm.getNetworkCapabilities(network);
+                                if (capabilities != null) {
+                                    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                                        networkType = "WIFI";
+                                    } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
+                                        networkType = "4G/5G";
+                                    }
+                                }
+                            }
+                        } else {
+                            NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+                            if (activeNetwork != null && activeNetwork.isConnectedOrConnecting()) {
+                                if (activeNetwork.getType() == ConnectivityManager.TYPE_WIFI) {
+                                    networkType = "WIFI";
+                                } else if (activeNetwork.getType() == ConnectivityManager.TYPE_MOBILE) {
+                                    networkType = "4G/5G";
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to get network status", e);
+                }
+
                 String jsonInputString = "{\"manifesto_id\": \"" + manifestoId + "\", \"lat\": " + location.getLatitude() + ", \"lng\": " + location.getLongitude() + ", \"timestamp\": \"" + timestamp + "\"";
+                
+                if (batteryPct >= 0) {
+                    jsonInputString += ", \"battery\": " + batteryPct;
+                }
+                jsonInputString += ", \"network\": \"" + networkType + "\"";
                 
                 if (deviceToken != null && !deviceToken.isEmpty()) {
                     jsonInputString += ", \"device_token\": \"" + deviceToken + "\"";
